@@ -1,3 +1,9 @@
+"""PyTorchfunctional SGD Optimiser with rthogonalisation.
+
+Modified from https://github.com/pytorch/pytorch/blob/5824a866b72c251ad47a9c16dc652e49cfd7e234/torch/optim/_functional.py
+See the PyTorch License included.
+"""
+
 import torch
 from torch import Tensor
 from typing import List, Optional
