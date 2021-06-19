@@ -1,3 +1,3 @@
-[submodule "img_seg/UniverseNet"]
-	path = img_seg/UniverseNet
+[submodule "img_segmentation/UniverseNet"]
+	path = img_segmentation/UniverseNet
 	url = https://github.com/shinya7y/UniverseNet.git

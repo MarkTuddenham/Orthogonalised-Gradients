@@ -3,16 +3,24 @@
 
 ## Install 
 
-Install our version of pytorch with the adjusted SGD optimiser
-
 ```bash
-pip install -U --force-reinstall --no-cache-dir git+https://github.com/MarkTuddenham/pytorch.git@orth_sgd
+python -m venv venv
+pip install -r requirements.txt
+pip install .
+```
+And then at the top of your main python script:
+
+```python
+from orth_optim import hook
+hook()
 ```
 
-or use the code in `Orth_SGD.py` as a standalone optimiser.
-
-
 ## Image Classification (CIFAR10 & ImageNet)
+
+```bash
+cd img_classificaton
+python run.py -h
+```
 
 ## Image Segmentation (COCO)
 
