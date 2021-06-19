@@ -199,6 +199,7 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
             total=batch_count)
 
     model.train()
+    weights = get_weights(model)
     for batch_idx, (x, y) in pbar:
         x, y = x.to(device), y.to(device)
         optimiser.zero_grad()
@@ -209,7 +210,7 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
 
         if th.isnan(L).any():
             logger.warning('NaN loss, skipping batch')
-            return
+            continue
 
         train_loss += L.item() * y.shape[0]
         pred = z.argmax(dim=1, keepdim=True)
@@ -218,8 +219,8 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         optimiser.step()
 
         status_str = (f"Batch {batch_idx}/{batch_count}: Loss {L: .3f}, "
-                      f"Running Epoch Acc: {train_accuracy/((batch_idx+1)*args.batch_size):.3%}, "
-                      f"|model|: {get_weights(model).norm():.3f}")
+                      f"Running Epoch Acc: {train_accuracy / ((batch_idx + 1) * args.batch_size):.3%}, "
+                      f"|model|: {weights.norm():.3f}")
         if not args.avoid_tqdm:
             pbar.set_description(status_str)
         logger.debug(status_str)
