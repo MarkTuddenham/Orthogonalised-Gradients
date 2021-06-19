@@ -30,5 +30,15 @@ python run.py -h
 
 ## Image Segmentation (COCO)
 
+Sync the submodules.
+
+Add
+
+```python
+from orth_optim import hook_mmcv
+hook_mmcv()
+```
+to the top of img_segmentation/UniverseNet/tools/train.py
+
 ## NLP
 
