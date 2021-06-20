@@ -32,14 +32,19 @@ def sgd(params: List[Tensor],
             d_p_flat = d_p.flatten(start_dim=1)
 
             try:
-                u, _, v = torch.linalg.svd(d_p_flat, full_matrices=False)
+                u, _, vt = torch.linalg.svd(d_p_flat, full_matrices=False)
+                d_p = (u @ vt).reshape_as(param)
             except RuntimeError:
                 print("Failed to perform svd, adding some noise.")
-                u, _, v = torch.linalg.svd(
-                    d_p_flat + 1e-4 * d_p_flat.mean() * torch.randn_like(d_p_flat),
-                    full_matrices=False)
+                # u, _, v = torch.linalg.svd(
+                #     d_p_flat + 1e-4 * d_p_flat.mean() * torch.randn_like(d_p_flat),
+                #     full_matrices=False)
+                try:
+                    u, _, v = torch.svd_lowrank(d_p_flat, M=1e-4 * d_p_flat.mean() * torch.randn_like(d_p_flat))
+                    d_p = (u @ v.T).reshape_as(param)
+                except RuntimeError:
+                    print('Failed to perform svd with noise, using normal SGD')
 
-            d_p = (u @ v).reshape_as(param)
 
         if weight_decay != 0:
             d_p = d_p.add(param, alpha=weight_decay)

@@ -1,8 +1,8 @@
 img_classification/plots/
 img_classification/results/
 
-
 img_segmentation/work_dirs/
+img_segmentation/logs/
 img_segmentation/data/*
 !.gitkeep
 

@@ -40,5 +40,11 @@ hook_mmcv()
 ```
 to the top of img_segmentation/UniverseNet/tools/train.py
 
+For distributed training
+```bash
+GPUS=4 ./UniverseNet/tools/dist_train.sh  UniverseNet/configs/faster_rcnn/faster_rcnn_r50_fpn_1x_coco.py 4 
+GPUS=4 ./UniverseNe./tools/dist_train.sh ./configs/faster_rcnn/faster_rcnn_r50_fpn_1x_coco_orth.py 4 
+```
+
 ## NLP
 
