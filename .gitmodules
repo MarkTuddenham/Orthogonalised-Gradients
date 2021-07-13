@@ -1,3 +1,6 @@
 [submodule "img_segmentation/UniverseNet"]
 	path = img_segmentation/UniverseNet
 	url = https://github.com/shinya7y/UniverseNet.git
+[submodule "semantic_segmentation"]
+	path = semantic_segmentation
+	url = https://github.com/Tramac/awesome-semantic-segmentation-pytorch.git
