@@ -245,8 +245,8 @@ def main():
 
     model = models[args.model]().to(device)
     if args.gpu_ids is not None and len(args.gpu_ids) > 1:
-        logger.info(f'Using DataParallel with {len(args.gpu_ids)} GPUs: {args.gpu_ids.join(" ")}')
-        model = th.nn.DataParallel(model, device_ids=args.gpu_ids)
+        logger.info(f'Using DataParallel with {len(args.gpu_ids)} GPUs: {" ".join(args.gpu_ids)}')
+        model = th.nn.DataParallel(model, device_ids=map(str, args.gpu_ids))
 
     # # Don't use with DataParallel either
     # if not args.model.startswith('densenet'):
