@@ -43,14 +43,13 @@ load_dotenv('../')
 load_dotenv()
 
 
-
 def get_args():
     parser = argparse.ArgumentParser(description='Image Classification w/ SGD and Orhtogonalised SGD')
     parser.add_argument('--batch-size', '--bs', type=int, default=2**10, metavar='N',
                         help='input batch size for training (default: 1024)')
     parser.add_argument('--epochs', '--eps', type=int, default=20, metavar='N',
                         help='number of epochs to train (default: 20)')
-    parser.add_argument( '--learning-rate', '--lr', type=float, default=1e-2, metavar='LR',
+    parser.add_argument('--learning-rate', '--lr', type=float, default=1e-2, metavar='LR',
                         help='learning rate (default: 1e-2)')
     parser.add_argument('--momentum', '--mom', type=float, default=0.9, metavar='mom',
                         help='momentum (default: 0.9)')

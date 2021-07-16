@@ -5,23 +5,23 @@ trap '
   kill -s INT "$$"
 ' INT
 
-source ../..//venv/bin/activate
+source ../venv/bin/activate
 
-epochs=200
+epochs=25
 wd=5e-4
-bs=1024
+bs=4
 lr=1e-3
 
 models=(
-    BasicCNN
+    # BasicCNN
     resnet18
     # resnet34
-    resnet50
-    resnet20
-    resnet44
-    densenet121
-    resnext50_32x4d
-    wide_resnet50_2
+    # resnet50
+    # resnet20
+    # resnet44
+    # densenet121
+    # resnext50_32x4d
+    # wide_resnet50_2
   )
 
 for model in "${models[@]}"; do

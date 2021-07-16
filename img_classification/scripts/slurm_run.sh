@@ -19,28 +19,26 @@ source /ECShome/mt9g15/venv/bin/activate
 epochs=100
 wd=5e-4
 bs=1024
-lr=1e-1
+lr=1e-2
 
 models=(
-    # BasicCNN
-    # resnet18
-    # resnet34
+    BasicCNN
+    resnet18
+    resnet34
     resnet50
     # inception_v3 # Only for imagenet -> requires input Nx3x299x299
-    # densenet121
-    # densenet161
-    # resnext50_32x4d
-    # wide_resnet50_2
-    # vgg11
-    # vgg13
-    # vgg16
+    densenet121
+    densenet161
+    resnext50_32x4d
+    wide_resnet50_2
+    vgg11
+    vgg13
+    vgg16
   )
 
 
 for model in "${models[@]}"; do
-  python3 run.py --save --avoid-tqdm --lr=${lr} --batch-size=${bs} --weight-decay=${wd} --epochs=${epochs} --model=${model}
-  # python3 run.py --save --avoid-tqdm --lr=${lr} --batch-size=${bs} --weight-decay=${wd} --epochs=${epochs} --model=${model} --orth
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -as --gpu-ids 0 1 2 3 4
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -aso --gpu-ids 0 1 2 3 4
 done
-
-python3 analysis.py
 
