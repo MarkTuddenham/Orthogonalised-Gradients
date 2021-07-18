@@ -1,8 +1,9 @@
 import torch
 
 
+@torch.no_grad()
 def _orth_grads(optimiser):
-    # Orthogonalise the gradients before the original optim's step method
+    # Orthogonalise the gradients using SVD
     for group in optimiser.param_groups:
         orth = group['orth']
         for p in group['params']:
@@ -37,6 +38,7 @@ def orthogonalise(cls):
             grp.setdefault('orth', orth)
 
     def new_step(self, *args, **kwargs):
+        # Orht the grads before the original optim's step method
         _orth_grads(self)
         og_step(self, *args, **kwargs)
 
@@ -45,16 +47,23 @@ def orthogonalise(cls):
     return cls
 
 
-_orth_sgd = orthogonalise(torch.optim.SGD)
-
-
 def hook():
-    setattr(torch.optim, 'SGD', _orth_sgd)
+    from inspect import isclass
+    for mod in dir(torch.optim):
+        if mod.startswith('_'):
+            continue
+        _optim = getattr(torch.optim, mod)
+        if isclass(_optim) and issubclass(_optim, torch.optim.Optimizer):
+            setattr(torch.optim, mod, orthogonalise(_optim))
 
 
 def hook_mmcv():
+    hook()
     import mmcv
-    mmcv.runner.optimizer.builder.OPTIMIZERS.register_module(
-        name='SGD',
-        module=_orth_sgd,
-        force=True)
+    # Re-register the optimisers from torch since they are now the orth versions
+    mmcv.runner.optimizer.builder.register_torch_optimizers()
+
+    # mmcv.runner.optimizer.builder.OPTIMIZERS.register_module(
+    #     name='SGD',
+    #     module=_orth_sgd,
+    #     force=True)
