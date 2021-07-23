@@ -4,3 +4,6 @@
 [submodule "object_detection/UniverseNet"]
 	path = object_detection/UniverseNet
 	url = https://github.com/shinya7y/UniverseNet.git
+[submodule "contrastive_learning"]
+	path = contrastive_learning
+	url = https://github.com/marktuddenham/barlowtwins.git
