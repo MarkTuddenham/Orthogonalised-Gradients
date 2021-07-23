@@ -7,15 +7,13 @@ def _orth_grads(optimiser):
     for group in optimiser.param_groups:
         orth = group['orth']
         for p in group['params']:
-
             if orth and p.grad is not None and p.ndim > 1:
                 d_p_flat = p.grad.flatten(start_dim=1)
-
                 try:
                     u, _, vt = torch.linalg.svd(d_p_flat, full_matrices=False)
                     p.grad = (u @ vt).reshape_as(p)
                 except RuntimeError:
-                    print("Failed to perform SVD, adding some noise.")
+                    logger.error('Failed to perform SVD, adding some noise.')
                     try:
                         u, _, v = torch.svd_lowrank(
                             d_p_flat,
@@ -23,7 +21,8 @@ def _orth_grads(optimiser):
                             M=1e-4 * d_p_flat.mean() * torch.randn_like(d_p_flat))
                         p.grad = (u @ v.T).reshape_as(p)
                     except RuntimeError:
-                        print('Failed to perform SVD with noise, using normal SGD')
+                        logger.error(('Failed to perform SVD with noise,'
+                                      ' skipping gradient orthogonalisation'))
 
 
 def orthogonalise(cls):
@@ -38,7 +37,7 @@ def orthogonalise(cls):
             grp.setdefault('orth', orth)
 
     def new_step(self, *args, **kwargs):
-        # Orht the grads before the original optim's step method
+        # Orthogonalise the grads before the original optim's step method
         _orth_grads(self)
         og_step(self, *args, **kwargs)
 
@@ -53,7 +52,9 @@ def hook():
         if mod.startswith('_'):
             continue
         _optim = getattr(torch.optim, mod)
-        if isclass(_optim) and issubclass(_optim, torch.optim.Optimizer):
+        if (isclass(_optim)
+           and issubclass(_optim, torch.optim.Optimizer)
+           and _optim is not torch.optim.Optimizer):
             setattr(torch.optim, mod, orthogonalise(_optim))
 
 
