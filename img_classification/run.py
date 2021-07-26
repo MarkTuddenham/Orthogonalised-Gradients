@@ -215,11 +215,30 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         pred = z.argmax(dim=1, keepdim=True)
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
+        og_grads = clone_gradients(model, concat=False, preserve_shape=True)
+        # og_grads_vec = clone_gradients(model) but avoids making two clones
+        og_grads_vec = th.cat([p.flatten() for p in og_grads])
+
         optimiser.step()
 
-        status_str = (f"Batch {batch_idx}/{batch_count}: Loss {L: .3f}, "
-                      f"Running Epoch Acc: {train_accuracy / ((batch_idx + 1) * args.batch_size):.3%}, "
-                      f"|model|: {weights.norm():.3f}")
+        orth_grads = get_gradients(model, concat=False, preserve_shape=True)
+        orth_grads_vec = get_gradients(model)
+
+        # Add grad norm data
+        # avg cosine (grads before to grads after)
+        # Frobenius norm of O-G -- need to keep original shape
+        grad_norm = og_grads_vec.norm()
+        cosine = cosine_compare(og_grads, orth_grads)
+        frobenius = (orth_grads_vec - og_grads_vec).norm()
+        data_collectors['grad_norm'].append(grad_norm)
+        data_collectors['cosine'].append(cosine)
+        data_collectors['frobenius'].append(frobenius)
+        print(f'Frobenius: {frobenius: .3f}, |g|: {grad_norm: .3f}, cosine: {cosine: .3f}')
+
+        status_str = (
+            f"Batch {batch_idx}/{batch_count}: Loss {L: .3f}, "
+            f"Running Epoch Acc: {train_accuracy / ((batch_idx + 1) * args.batch_size):.3%}, "
+            f"|model|: {weights.norm():.3f}")
         if not args.avoid_tqdm:
             pbar.set_description(status_str)
         logger.debug(status_str)

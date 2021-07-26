@@ -6,8 +6,12 @@ from functools import partial
 
 import logging
 
+from statistics import mean
+
 import torch as th
 from torch.nn import functional as F
+
+from torch.nn.functional import cosine_similarity as cosine
 
 from torchvision.models import resnet18
 from torchvision.models import resnet34
@@ -78,8 +82,8 @@ def run_data(model, device, data_loader, valid=True):
     acc = correct / len(data_loader.dataset)
     if not valid:
         logger.info((f'Test: Average loss: {loss:.4f}, '
-                      f'Accuracy: {correct}/{len(data_loader.dataset)} '
-                      f'({acc:.1%})'))
+                     f'Accuracy: {correct}/{len(data_loader.dataset)} '
+                     f'({acc:.1%})'))
 
     return loss, acc
 
@@ -87,24 +91,31 @@ def run_data(model, device, data_loader, valid=True):
 def get_device(no_cuda=False):
     """Get the torch device."""
     cuda = not no_cuda and th.cuda.is_available()
-    d = th.device(f'cuda' if cuda else "cpu")
+    d = th.device('cuda' if cuda else "cpu")
     logger.info(f'Running on: {th.cuda.get_device_name(d) if cuda else "cpu"}')
     return d
 
 
-def for_each_param(model: th.nn.Module, f):
-    return th.cat([
-        f(p)
-        for p in model.parameters(recurse=True)
-        if p.requires_grad])
+def for_each_param(model, f, concat=True, preserve_shape=False):
+    param_list = [f(p) if preserve_shape else f(p).flatten()
+                  for p in model.parameters(recurse=True)
+                  if p.requires_grad]
+    return th.cat(param_list) if concat else param_list
 
 
-clone_gradients = partial(for_each_param,
-        f=lambda p: p.grad.clone().detach().flatten())
-get_gradients = partial(for_each_param,
-        f=lambda p: p.grad.flatten())
-clone_weights = partial(for_each_param,
-        f=lambda p: p.clone().detach().flatten())
-get_weights = partial(for_each_param,
-        f=lambda p: p.flatten())
+get_weights = partial(for_each_param, f=lambda p: p)
+get_gradients = partial(for_each_param, f=lambda p: p.grad)
+clone_weights = partial(for_each_param, f=lambda p: p.clone().detach())
+clone_gradients = partial(for_each_param, f=lambda p: p.grad.clone().detach())
+
+
+def cosine_compare(param_set_1, param_set_2):
+    cosines = []
+    for pa, pb in zip(param_set_1, param_set_2):
+        if pa.ndim == 1:
+            continue
+        pa_flat = pa.flatten(start_dim=1)
+        pb_flat = pb.flatten(start_dim=1)
+        cosines.append(cosine(pa_flat, pb_flat).mean().item())
+    return mean(cosines)
 
