@@ -1,6 +1,8 @@
 """Utilisation functions & Modules for ResNets."""
 from typing import Dict
 from typing import Type
+from typing import Union
+from typing import Callable
 
 from functools import partial
 
@@ -40,7 +42,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.NullHandler())
 
-models: Dict[str, Type[th.nn.Module]] = {M.__name__: M for M in [
+models: Dict[
+    str,
+    Union[Type[th.nn.Module], Callable[[], th.nn.Module]]
+] = {M.__name__: M for M in [
     BasicCNN,
     resnet18,
     resnet34,
@@ -64,7 +69,10 @@ models: Dict[str, Type[th.nn.Module]] = {M.__name__: M for M in [
 ]}
 
 
-def run_data(model, device, data_loader, valid=True):
+def run_data(model: th.nn.Module,
+             device: th.Device,
+             data_loader: th.utils.data.DataLoader,
+             valid: bool = True):
     model.eval()
     loss = 0
     correct = 0
@@ -88,7 +96,7 @@ def run_data(model, device, data_loader, valid=True):
     return loss, acc
 
 
-def get_device(no_cuda=False):
+def get_device(no_cuda: bool = False) -> th.Device:
     """Get the torch device."""
     cuda = not no_cuda and th.cuda.is_available()
     d = th.device('cuda' if cuda else "cpu")
@@ -96,7 +104,10 @@ def get_device(no_cuda=False):
     return d
 
 
-def for_each_param(model, f, concat=True, preserve_shape=False):
+def for_each_param(model: th.nn.Module,
+                   f: Callable[[th.Tensor], th.Tensor],
+                   concat: bool = True,
+                   preserve_shape: bool = False):
     param_list = [f(p) if preserve_shape else f(p).flatten()
                   for p in model.parameters(recurse=True)
                   if p.requires_grad]
@@ -109,7 +120,7 @@ clone_weights = partial(for_each_param, f=lambda p: p.clone().detach())
 clone_gradients = partial(for_each_param, f=lambda p: p.grad.clone().detach())
 
 
-def cosine_compare(param_set_1, param_set_2):
+def cosine_compare(param_set_1: list[th.Tensor], param_set_2: list[th.Tensor]) -> int:
     cosines = []
     for pa, pb in zip(param_set_1, param_set_2):
         if pa.ndim == 1:
