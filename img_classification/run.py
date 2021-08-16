@@ -1,6 +1,7 @@
 import os
 import argparse
 import logging
+from functools import partial
 from copy import copy
 from dotenv import load_dotenv
 from threading import Thread
@@ -14,6 +15,7 @@ from torch.nn import functional as F
 # from torchsummary import summary
 
 from orth_optim import hook
+from orth_optim import logger as orth_logger
 
 from analysis import do_analysis
 
@@ -21,9 +23,12 @@ from persist import save_tensor
 
 from utils import get_device
 from utils import get_weights
+from utils import get_gradients
+from utils import clone_gradients
 from utils import run_data
 from utils import models
 from utils import logger as utils_logger
+from utils import cosine_compare
 
 hook()
 
@@ -44,7 +49,8 @@ load_dotenv()
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Image Classification w/ SGD and Orhtogonalised SGD')
+    parser = argparse.ArgumentParser(
+        description='Image Classification w/ SGD and Orthogonalised SGD')
     parser.add_argument('--batch-size', '--bs', type=int, default=2**10, metavar='N',
                         help='input batch size for training (default: 1024)')
     parser.add_argument('--epochs', '--eps', type=int, default=20, metavar='N',
@@ -59,6 +65,8 @@ def get_args():
                         help='Name of the model to use (default: BasicCNN)')
     parser.add_argument('--orth', '-o', action='store_true', default=False,
                         help='Use orthogonalised SGD (defualt: False)')
+    parser.add_argument('--orth_extended', '-e', action='store_true', default=False,
+                        help='Use extended orthogonalised SGD (defualt: False)')
     parser.add_argument('--dataset', default='cifar10',
                         help='Which data set to train on: cifar10/imagenet (default: cifar10)')
 
@@ -72,6 +80,8 @@ def get_args():
                         help='Use tqdm progress bars or simple print (default: False)')
     parser.add_argument('--do-analysis', '-a', action='store_true', default=True,
                         help='Run the analysis while training (default: True)')
+    parser.add_argument('--layer', default='conv1',
+                        help='Name of the layer to sample from')
     args = parser.parse_args()
     return args
 
@@ -90,16 +100,26 @@ def train_loop(model, device, args, log_f):
     valid_accuracies = []
     train_losses = []
     train_accuracies = []
-    data_collectors = {}
+    data_collectors = {
+        'grad_norm': [],
+        'cosine': [],
+        'frobenius': [],
+        'filter_path': [],
+        'filter_grad_path': [],
+    }
     # ==== / Metric Containers ====
 
     def save(overwrite=False, full_analysis=False, epoch=None):
+        st = partial(save_tensor, params=save_opts, overwrite=overwrite)
         if args.save:
-            save_tensor(model.state_dict(), 'results/model', save_opts, overwrite)
-            save_tensor(valid_losses, 'results/valid_losses', save_opts, overwrite)
-            save_tensor(valid_accuracies, 'results/valid_accuracies', save_opts, overwrite)
-            save_tensor(train_losses, 'results/train_losses', save_opts, overwrite)
-            save_tensor(train_accuracies, 'results/train_accuracies', save_opts, overwrite)
+            st(model.state_dict(), 'results/model')
+            st(valid_losses, 'results/valid_losses')
+            st(valid_accuracies, 'results/valid_accuracies')
+            st(train_losses, 'results/train_losses')
+            st(train_accuracies, 'results/train_accuracies')
+            for key, val in data_collectors.items():
+                st(val, 'results/' + key)
+
             if args.do_analysis and (epoch is None or epoch % 10 == 0):
                 Thread(target=do_analysis, args=(save_opts, full_analysis)).start()
     save()  # Create a new save to be overwritten later
@@ -110,7 +130,6 @@ def train_loop(model, device, args, log_f):
         from data.cifar10 import get_train_gen
         from data.cifar10 import get_valid_gen
         from data.cifar10 import get_test_gen
-        from data.cifar10 import input_size
 
     elif args.dataset == 'imagenet':
         from data.imagenet_hdf5 import set_data_path
@@ -121,7 +140,8 @@ def train_loop(model, device, args, log_f):
         from data.imagenet_hdf5 import logger as imagenet_hdf5_logger
         imagenet_hdf5_logger.addHandler(log_f)
     else:
-        logger.error(f'Unknown dataset: {args.dataset}, please use either \'cifar10\' or \'imagenet\'')
+        logger.error((f'Unknown dataset: {args.dataset},'
+                      'please use either \'cifar10\' or \'imagenet\''))
 
     set_data_path(os.environ.get('DATA_PATH', './datasets'))
     train_loader = get_train_gen(args.batch_size)
@@ -135,7 +155,8 @@ def train_loop(model, device, args, log_f):
         weight_decay=args.weight_decay,
         momentum=args.momentum,
         nesterov=True,
-        orth=args.orth)
+        orth=args.orth,
+        orth_extended=args.orth_extended)
 
     # lr_sched = th.optim.lr_scheduler.MultiStepLR(
     #     optimiser,
@@ -215,6 +236,15 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         pred = z.argmax(dim=1, keepdim=True)
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
+        # save conv filter & its grad to analyse path later on
+        if args.model.startswith('resnet'):
+            layer = model.layer1[0].conv1
+        else:
+            layer = getattr(model, args.layer, 'No %s layer.')
+
+        data_collectors["filter_path"].append(layer.weight.detach().clone().cpu())
+        data_collectors["filter_grad_path"].append(layer.weight.grad.detach().clone().cpu())
+
         og_grads = clone_gradients(model, concat=False, preserve_shape=True)
         # og_grads_vec = clone_gradients(model) but avoids making two clones
         og_grads_vec = th.cat([p.flatten() for p in og_grads])
@@ -231,14 +261,15 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         cosine = cosine_compare(og_grads, orth_grads)
         frobenius = (orth_grads_vec - og_grads_vec).norm()
         data_collectors['grad_norm'].append(grad_norm)
+        # TODO: think theres a problem here -> when orth is skipped, cosine is not 1
         data_collectors['cosine'].append(cosine)
         data_collectors['frobenius'].append(frobenius)
-        print(f'Frobenius: {frobenius: .3f}, |g|: {grad_norm: .3f}, cosine: {cosine: .3f}')
+        logger.debug(f'Frobenius: {frobenius: .3f}, |g|: {grad_norm: .3f}, cosine: {cosine: .3f}')
 
         status_str = (
             f"Batch {batch_idx}/{batch_count}: Loss {L: .3f}, "
             f"Running Epoch Acc: {train_accuracy / ((batch_idx + 1) * args.batch_size):.3%}, "
-            f"|model|: {weights.norm():.3f}")
+            f"|model|: {get_weights(model).norm():.3f}")  # TODO this should work as a ref
         if not args.avoid_tqdm:
             pbar.set_description(status_str)
         logger.debug(status_str)
@@ -257,6 +288,7 @@ def main():
     log_f.setFormatter(formatter)
     logger.addHandler(log_f)
     utils_logger.addHandler(log_f)
+    orth_logger.addHandler(log_f)
     # analysis_logger.addHandler(log_f)
 
     args = get_args()

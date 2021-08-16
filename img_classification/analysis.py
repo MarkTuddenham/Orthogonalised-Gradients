@@ -1,5 +1,4 @@
 from copy import deepcopy
-import os
 from os import makedirs
 
 import logging
@@ -13,20 +12,18 @@ from matplotlib import use as mpl_use
 # from data.cifar10 import get_test_gen, input_size
 # from data.cifar10 import set_data_path
 
-# from imagenet_hdf5 import get_test_gen
-# from imagenet_hdf5 import input_size
+# from imagenet_hdf5 import get_test_gen from imagenet_hdf5 import input_size
 
 from persist import load_last_tensor
 # from persist import load_tensor
 
-from utils import get_device
+# from utils import get_device
 from utils import models
-from utils import run_data
+# from utils import run_data
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.NullHandler())
-
 
 mpl_use('Agg')
 
@@ -43,9 +40,9 @@ th.set_printoptions(
     sci_mode=None
 )
 
-fig_size = 6
-# rect_fig_size = (fig_size * 1.618, fig_size)
-rect_fig_size = (fig_size * 2, fig_size)
+fig_size = 6  # 4
+rect_fig_size = (fig_size * 1.618, fig_size)
+# rect_fig_size = (fig_size * 2, fig_size)
 # rect_fig_size = (fig_size * 2 * 1.618, fig_size)
 pic_type = '.png'
 
@@ -81,11 +78,9 @@ def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
         return
     valid_accuracies = load_last_tensor('results/valid_accuracies', opts)
 
-    loss_label = acc_label = f'{opts["model"]} with {"Orth SGD" if opts["orth"] else "SGD"}'
-
     _, losses_ax, _, acc_ax, cmap = plot_items
 
-    #TODO: load saved test loss
+    # TODO: load saved test loss
     # if full:
     #     global test_loader
     #     if test_loader is None:
@@ -106,22 +101,65 @@ def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
     #                      f'Test Loss & Accuracy: {test_loss: .4f} & {test_acc :.2%}'))
 
     colour = cmap(float(i) / len(models.keys()))
+
+    label_prefix = f'{opts["model"]} with '
+    label = label_prefix + 'SGD'
     if opts['orth']:
-        losses_ax.plot(valid_losses, c=colour, label=loss_label)
-        acc_ax.plot(valid_accuracies, c=colour, label=acc_label)
-    else:
-        losses_ax.plot(valid_losses, '--', c=colour, label=loss_label)
-        acc_ax.plot(valid_accuracies, '--', c=colour, label=acc_label)
+        if opts['orth_extended']:
+            label = label_prefix + "Ex Orth SGD"
+        else:
+            label = label_prefix + "Orth SGD"
+
+    # TODO plot from 1 on the x axis
+    line_type = '--'
+    if opts['orth']:
+        line_type = ':' if opts['orth_extended'] else '-'
+
+    losses_ax.plot(valid_losses, line_type, c=colour, label=label)
+    acc_ax.plot(valid_accuracies, line_type, c=colour, label=label)
 
 
 def finalise_loss_acc_plot(plot_items):
     losses_fig, losses_ax, acc_fig, acc_ax, _ = plot_items
     losses_ax.legend(loc='upper right', frameon=False, bbox_to_anchor=(1.26, 1))
+    # losses_ax.legend(loc='lower right')
     losses_fig.savefig('plots/losses' + pic_type, bbox_inches='tight')
     plt.close(losses_fig)
     acc_ax.legend(loc='upper right', frameon=False, bbox_to_anchor=(1.26, 1))
+    # acc_ax.legend(loc='lower right')
     acc_fig.savefig('plots/accuracies' + pic_type, bbox_inches='tight')
     plt.close(acc_fig)
+
+
+def plot_per_batch(opts):
+    fig = plt.figure(figsize=rect_fig_size)
+    ax = fig.add_subplot(111)
+
+    ax.spines['right'].set_color(None)
+    ax.spines['top'].set_color(None)
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Validation Loss')
+    # ax.set_ylim((0, 3))
+
+    for i in range(2, 11):
+        bs = 2**i
+        opts.update({'batch_size': bs, 'orth': False})
+        val_l = load_last_tensor('results/valid_losses', opts)
+        if not val_l:
+            continue
+        opts.update({'orth': True})
+        val_l_o = load_last_tensor('results/valid_losses', opts)
+        if not val_l_o:
+            continue
+        val_l, val_l_o = th.tensor(val_l), th.tensor(val_l_o)
+        last_ep = min(val_l.numel(), val_l_o.numel())
+        diff = val_l_o[:last_ep] - val_l[:last_ep]
+
+        ax.plot(diff, label=bs)
+
+    ax.legend(loc='lower right')
+    fig.savefig('plots/acc_per_batch' + pic_type, bbox_inches='tight')
+    plt.close(fig)
 
 
 def do_analysis(opts, full=False, testloader=None):
@@ -132,14 +170,16 @@ def do_analysis(opts, full=False, testloader=None):
     # if test_loader is None and testloader is not None:
     #     test_loader = testloader
 
-    plot_items = setup_loss_acc_plot()
+    # plot_per_batch(opts)
 
+    plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
-        opts.update({'model': model_name, 'orth': False})
+        opts.update({'model': model_name, 'orth': False, 'orth_extended': False})
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
         opts.update({'orth': True})
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
-
+        opts.update({'orth_extended': True})
+        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
     finalise_loss_acc_plot(plot_items)
 
 
@@ -153,10 +193,11 @@ if __name__ == '__main__':
     log_f.setFormatter(formatter)
     logger.addHandler(log_f)
     do_analysis({'batch_size': 1024,
-                 'epochs': 100,
-                 'lr': 1e-2,
+                 'epochs': 50,
+                 'learning_rate': 1e-2,
                  'momentum': 0.9,
                  'weight_decay': 5e-4,
-                 'model': 'resnet50',
-                 'orth': False},
+                 'model': 'resnet18',
+                 'orth': False,
+                 'dataset': 'cifar10'},
                 True)

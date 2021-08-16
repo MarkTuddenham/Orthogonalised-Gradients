@@ -1,4 +1,6 @@
 """Utilisation functions & Modules for ResNets."""
+from typing import List
+from typing import Tuple
 from typing import Dict
 from typing import Type
 from typing import Union
@@ -70,12 +72,12 @@ models: Dict[
 
 
 def run_data(model: th.nn.Module,
-             device: th.Device,
+             device: th.device,
              data_loader: th.utils.data.DataLoader,
-             valid: bool = True):
+             valid: bool = True) -> Tuple[float, float]:
     model.eval()
-    loss = 0
-    correct = 0
+    loss: float = 0
+    correct: int = 0
     with th.no_grad():
         for data, target in data_loader:
             data, target = data.to(device), target.to(device)
@@ -87,7 +89,7 @@ def run_data(model: th.nn.Module,
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     loss /= len(data_loader.dataset)
-    acc = correct / len(data_loader.dataset)
+    acc: float = correct / len(data_loader.dataset)
     if not valid:
         logger.info((f'Test: Average loss: {loss:.4f}, '
                      f'Accuracy: {correct}/{len(data_loader.dataset)} '
@@ -96,10 +98,10 @@ def run_data(model: th.nn.Module,
     return loss, acc
 
 
-def get_device(no_cuda: bool = False) -> th.Device:
+def get_device(no_cuda: bool = False) -> th.device:
     """Get the torch device."""
-    cuda = not no_cuda and th.cuda.is_available()
-    d = th.device('cuda' if cuda else "cpu")
+    cuda: bool = not no_cuda and th.cuda.is_available()
+    d: th.device = th.device('cuda' if cuda else "cpu")
     logger.info(f'Running on: {th.cuda.get_device_name(d) if cuda else "cpu"}')
     return d
 
@@ -107,26 +109,28 @@ def get_device(no_cuda: bool = False) -> th.Device:
 def for_each_param(model: th.nn.Module,
                    f: Callable[[th.Tensor], th.Tensor],
                    concat: bool = True,
-                   preserve_shape: bool = False):
-    param_list = [f(p) if preserve_shape else f(p).flatten()
-                  for p in model.parameters(recurse=True)
-                  if p.requires_grad]
+                   preserve_shape: bool = False) -> Union[th.Tensor, List[th.Tensor]]:
+    param_list: List[th.Tensor] = [f(p) if preserve_shape else f(p).flatten()
+                                   for p in model.parameters(recurse=True)
+                                   if p.requires_grad]
     return th.cat(param_list) if concat else param_list
 
 
-get_weights = partial(for_each_param, f=lambda p: p)
-get_gradients = partial(for_each_param, f=lambda p: p.grad)
-clone_weights = partial(for_each_param, f=lambda p: p.clone().detach())
-clone_gradients = partial(for_each_param, f=lambda p: p.grad.clone().detach())
+PARAM_GET_TYPE = Callable[[th.nn.Module], Union[th.Tensor, List[th.Tensor]]]
+get_weights: PARAM_GET_TYPE = partial(for_each_param, f=lambda p: p)
+get_gradients: PARAM_GET_TYPE = partial(for_each_param, f=lambda p: p.grad)
+clone_weights: PARAM_GET_TYPE = partial(for_each_param, f=lambda p: p.clone().detach())
+clone_gradients: PARAM_GET_TYPE = partial(for_each_param, f=lambda p: p.grad.clone().detach())
 
 
-def cosine_compare(param_set_1: list[th.Tensor], param_set_2: list[th.Tensor]) -> int:
-    cosines = []
+def cosine_compare(param_set_1: List[th.Tensor], param_set_2: List[th.Tensor]) -> float:
+    cosines: List[float] = []
     for pa, pb in zip(param_set_1, param_set_2):
         if pa.ndim == 1:
             continue
-        pa_flat = pa.flatten(start_dim=1)
-        pb_flat = pb.flatten(start_dim=1)
-        cosines.append(cosine(pa_flat, pb_flat).mean().item())
-    return mean(cosines)
+        pa_flat: th.Tensor = pa.flatten(start_dim=1)
+        pb_flat: th.Tensor = pb.flatten(start_dim=1)
+        cosines.append(cosine(pa_flat, pb_flat, dim=0).mean().item())
+    mean_cos: float = mean(cosines)
+    return mean_cos
 
