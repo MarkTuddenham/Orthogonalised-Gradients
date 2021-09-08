@@ -1,5 +1,6 @@
 from copy import deepcopy
 from os import makedirs
+import os
 
 import logging
 
@@ -103,17 +104,16 @@ def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
     colour = cmap(float(i) / len(models.keys()))
 
     label_prefix = f'{opts["model"]} with '
-    label = label_prefix + 'SGD'
     if opts['orth']:
-        if opts['orth_extended']:
-            label = label_prefix + "Ex Orth SGD"
-        else:
-            label = label_prefix + "Orth SGD"
+        label_prefix += 'Orth '
+    if opts['nest']:
+        label_prefix += 'Nesterov '
+    label = label_prefix + 'SGD'
 
     # TODO plot from 1 on the x axis
-    line_type = '--'
+    line_type = '.-' if opts['nest'] else '--'
     if opts['orth']:
-        line_type = ':' if opts['orth_extended'] else '-'
+        line_type = ':' if opts['nest'] else '-'
 
     losses_ax.plot(valid_losses, line_type, c=colour, label=label)
     acc_ax.plot(valid_accuracies, line_type, c=colour, label=label)
@@ -174,11 +174,13 @@ def do_analysis(opts, full=False, testloader=None):
 
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
-        opts.update({'model': model_name, 'orth': False, 'orth_extended': False})
+        opts.update({'model': model_name, 'orth': False, 'nest': False})
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
         opts.update({'orth': True})
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
-        opts.update({'orth_extended': True})
+        opts.update({'nest': True, 'orth': False})
+        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
+        opts.update({'orth': True})
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
     finalise_loss_acc_plot(plot_items)
 
@@ -199,5 +201,6 @@ if __name__ == '__main__':
                  'weight_decay': 5e-4,
                  'model': 'resnet18',
                  'orth': False,
+                 'nest': False,
                  'dataset': 'cifar10'},
                 True)

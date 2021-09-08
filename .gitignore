@@ -1,5 +1,6 @@
 img_classification/plots/
 img_classification/results/
+img_classification/logs/
 
 object_detection/work_dirs/
 object_detection/logs/

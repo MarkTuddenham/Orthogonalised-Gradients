@@ -20,7 +20,7 @@ models=(
     resnet20
     # resnet44
     # densenet121
-    resnext50_32x4d
+    # resnext50_32x4d
     # wide_resnet50_2
     # vgg11
     # vgg13
@@ -28,8 +28,9 @@ models=(
   )
 
 for model in "${models[@]}"; do
-  # python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -as
-  # python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -aso
-  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -asoe
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -as
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -aso
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -asn
+  python3 run.py --lr ${lr} --bs ${bs} --wd ${wd} --eps ${epochs} -m ${model} -ason
 done
 

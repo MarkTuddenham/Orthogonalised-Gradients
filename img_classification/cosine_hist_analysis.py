@@ -53,7 +53,10 @@ def plot_filter_cosimilarity_hist(opts, on_grads=True, alpha=0.25):
 
     n = len(filter_x_path)
     cosines = []
-    intervals = [0, (n - 1) // 2, n - 1]
+    # intervals = [0, (n - 1) // 2, n - 1]
+    # colours = ['red', 'blue', 'green']
+    intervals = [n - 1]
+    colours = ['blue']
     for i in intervals:
         C = cosine_matrix(filter_x_path[i].cuda())
         s = C.shape[0]
@@ -64,7 +67,6 @@ def plot_filter_cosimilarity_hist(opts, on_grads=True, alpha=0.25):
     cosines_ax = cosines_fig.add_subplot(111)
     cosines_ax.set_xlim((-1, 1))
 
-    colours = ['red', 'blue', 'green']
     bins = np.arange(-1, 1, 0.05)
     for c, i, colour in zip(cosines, intervals, colours):
         l = c.shape[0]
@@ -110,5 +112,5 @@ if __name__ == '__main__':
                  'orth': True,
                  'orth_extended': False,
                  'dataset': 'cifar10',
-                 'layer': 'conv2'},
+                 'layer': 'conv1'},
                 )

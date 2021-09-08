@@ -65,8 +65,8 @@ def get_args():
                         help='Name of the model to use (default: BasicCNN)')
     parser.add_argument('--orth', '-o', action='store_true', default=False,
                         help='Use orthogonalised SGD (defualt: False)')
-    parser.add_argument('--orth_extended', '-e', action='store_true', default=False,
-                        help='Use extended orthogonalised SGD (defualt: False)')
+    parser.add_argument('--nest', '-n', action='store_true', default=False,
+                        help='Use Nesterov momentum (defualt: False)')
     parser.add_argument('--dataset', default='cifar10',
                         help='Which data set to train on: cifar10/imagenet (default: cifar10)')
 
@@ -154,9 +154,8 @@ def train_loop(model, device, args, log_f):
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
         momentum=args.momentum,
-        nesterov=True,
-        orth=args.orth,
-        orth_extended=args.orth_extended)
+        nesterov=args.nest,
+        orth=args.orth)
 
     # lr_sched = th.optim.lr_scheduler.MultiStepLR(
     #     optimiser,
@@ -237,13 +236,13 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
         # save conv filter & its grad to analyse path later on
-        if args.model.startswith('resnet'):
-            layer = model.layer1[0].conv1
-        else:
-            layer = getattr(model, args.layer, 'No %s layer.')
+        # if args.model.startswith('resnet'):
+        #     layer = model.layer1[0].conv1
+        # else:
+        #     layer = getattr(model, args.layer, 'No %s layer.')
 
-        data_collectors["filter_path"].append(layer.weight.detach().clone().cpu())
-        data_collectors["filter_grad_path"].append(layer.weight.grad.detach().clone().cpu())
+        # data_collectors["filter_path"].append(layer.weight.detach().clone().cpu())
+        # data_collectors["filter_grad_path"].append(layer.weight.grad.detach().clone().cpu())
 
         og_grads = clone_gradients(model, concat=False, preserve_shape=True)
         # og_grads_vec = clone_gradients(model) but avoids making two clones
