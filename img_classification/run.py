@@ -201,7 +201,9 @@ def train_loop(model, device, args, log_f):
             epoch_bar.set_description(epoch_status_str)
         logger.info(epoch_status_str)
 
-    run_data(model, device, test_loader, valid=False)
+    test_loss, test_acc = run_data(model, device, test_loader, valid=False)
+    save_tensor(th.tensor([test_loss, test_acc]), 'results/test_stats', save_opts)
+    logger.info(f'Test Loss: {test_loss: .3f}, Acc: {test_acc: .3f}')
     save(overwrite=True, full_analysis=True)
 
 
