@@ -1,6 +1,9 @@
 from copy import deepcopy
 from os import makedirs
 import os
+import sys
+
+import math as maths # :)
 
 import logging
 
@@ -16,7 +19,7 @@ from matplotlib import use as mpl_use
 # from imagenet_hdf5 import get_test_gen from imagenet_hdf5 import input_size
 
 from persist import load_last_tensor
-# from persist import load_tensor
+from persist import load_tensor
 
 # from utils import get_device
 from utils import models
@@ -50,6 +53,18 @@ pic_type = '.png'
 test_loader = None
 
 makedirs('./plots/', exist_ok=True)
+
+
+def calc_test_avg(opts):
+    test_stats = load_tensor('results/test_stats', opts)
+    if test_stats is None:
+        return
+    test_mean = test_stats.mean(dim=0)
+    test_std = test_stats.std(dim=0)
+    test_stderr = test_std.div(maths.sqrt(test_stats[0].numel()))
+
+    orth_text = ' w/ Orth ' if opts['orth'] else '         '
+    logger.info(f'{opts["model"]}{orth_text}- Test acc: {test_mean[1]:.3f}+-{test_stderr[1]:.3f}, Loss: {test_mean[0]:.3f}+-{test_stderr[0]:.3f}')
 
 
 def setup_loss_acc_plot():
@@ -165,6 +180,7 @@ def plot_per_batch(opts):
 def do_analysis(opts, full=False, testloader=None):
     logger.info('====== Analysis ======')
     opts = deepcopy(opts)
+    logger.info('Starting opts: %s', opts)
 
     # global test_loader
     # if test_loader is None and testloader is not None:
@@ -174,13 +190,14 @@ def do_analysis(opts, full=False, testloader=None):
 
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
-        opts.update({'model': model_name, 'orth': False, 'nest': False})
+        logger.info(f'Analysing results for {model_name}')
+        opts.update({'model': model_name, 'orth': False})
+        if full:
+            calc_test_avg(opts)
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
         opts.update({'orth': True})
-        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
-        opts.update({'nest': True, 'orth': False})
-        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
-        opts.update({'orth': True})
+        if full:
+            calc_test_avg(opts)
         plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
     finalise_loss_acc_plot(plot_items)
 
@@ -188,19 +205,30 @@ def do_analysis(opts, full=False, testloader=None):
 if __name__ == '__main__':
     log_dir = os.environ.get('LOG_DIR', './logs/')
     os.makedirs(log_dir, exist_ok=True)
-    log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/results.log', encoding='utf-8')
-    log_f.setLevel(logging.DEBUG)
+
     formatter = logging.Formatter('%(asctime)s - %(name)s %(levelname)s: %(message)s',
                                   datefmt='%m/%d/%Y %H:%M:%S')
+    log_std = logging.StreamHandler(sys.stdout)
+    log_std.setLevel(logging.INFO)
+    log_std.setFormatter(formatter)
+
+    log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/results.log', encoding='utf-8')
+    log_f.setLevel(logging.DEBUG)
     log_f.setFormatter(formatter)
+    
+    logger.addHandler(log_std)
     logger.addHandler(log_f)
-    do_analysis({'batch_size': 1024,
-                 'epochs': 50,
-                 'learning_rate': 1e-2,
-                 'momentum': 0.9,
-                 'weight_decay': 5e-4,
-                 'model': 'resnet18',
-                 'orth': False,
-                 'nest': False,
-                 'dataset': 'cifar10'},
-                True)
+
+    opts = {
+             'batch_size': 1024,
+             'epochs': 10,
+             'learning_rate': 1e-2,
+             'momentum': 0.9,
+             'weight_decay': 5e-4,
+             'model': 'resnet18',
+             'orth': False,
+             'nest': True,
+             'dataset': 'cifar10',
+             'layer': 'conv1'
+         }
+    do_analysis(opts, True)

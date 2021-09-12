@@ -50,9 +50,11 @@ def load_tensor(path: str, params: Optional[Params]) -> th.Tensor:
     """Load all the tensors into a stack."""
     path = get_path_with_hash(path, params)
     files = glob(f'{path}/*')
-    if len(files) is 0:
+    if len(files) == 0:
         return None
-    return th.stack([th.tensor(th.load(f)) for f in files if not f.endswith('.json')])
+    tensors = [th.load(f) for f in files if not f.endswith('.json')]
+    tensors = [i if isinstance(i, th.Tensor) else th.tensor(i) for i in tensors]
+    return th.stack(tensors)
 
 def load_last_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]:
     """Load only the last saved tensor."""
