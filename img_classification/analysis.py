@@ -13,11 +13,6 @@ import torch as th
 from matplotlib import pyplot as plt
 from matplotlib import use as mpl_use
 
-# from data.cifar10 import get_test_gen, input_size
-# from data.cifar10 import set_data_path
-
-# from imagenet_hdf5 import get_test_gen from imagenet_hdf5 import input_size
-
 from persist import load_last_tensor
 from persist import load_tensor
 
@@ -30,10 +25,6 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.NullHandler())
 
 mpl_use('Agg')
-
-# set_data_path(os.environ.get('DATA_PATH', './data/'))
-
-# device = get_device()
 
 th.set_printoptions(
     precision=7,
@@ -49,8 +40,6 @@ rect_fig_size = (fig_size * 1.618, fig_size)
 # rect_fig_size = (fig_size * 2, fig_size)
 # rect_fig_size = (fig_size * 2 * 1.618, fig_size)
 pic_type = '.png'
-
-test_loader = None
 
 makedirs('./plots/', exist_ok=True)
 
@@ -98,26 +87,6 @@ def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
     valid_accuracies = load_last_tensor('results/valid_accuracies', opts)
 
     _, losses_ax, _, acc_ax, cmap = plot_items
-
-    # TODO: load saved test loss
-    # if full:
-    #     global test_loader
-    #     if test_loader is None:
-    #         test_loader = get_test_gen(opts['batch_size'])
-
-    #     state_dict = load_last_tensor('results/model', opts)
-    #     if state_dict:
-    #         model = model_c().to(device)
-    #         model.load_state_dict(state_dict)
-    #         # summary = get_model_param_details(model, input_size, device=device)
-    #         test_loss, test_acc = run_data(model, device, test_loader, valid=False)
-    #         # loss_label += (f' (# params: {summary["trainable_params"]:.2g},'
-    #         #                f'test loss: {test_loss:.3f})')
-    #         # acc_label += (f' (# params: {summary["trainable_params"]:.2g},'
-    #         #               f' test acc: {test_acc:.2%})')
-    #         logger.info((f'{"Orth SGD" if opts["orth"] else "SGD": >8} - '
-    #                      f'{opts["model"]: >15} - '
-    #                      f'Test Loss & Accuracy: {test_loss: .4f} & {test_acc :.2%}'))
 
     colour = cmap(float(i) / len(models.keys()))
 
@@ -180,14 +149,10 @@ def plot_per_batch(opts):
     plt.close(fig)
 
 
-def do_analysis(opts, full=False, testloader=None):
+def do_analysis(opts, full=False):
     logger.info('====== Analysis ======')
     opts = deepcopy(opts)
     logger.info('Starting opts: %s', opts)
-
-    # global test_loader
-    # if test_loader is None and testloader is not None:
-    #     test_loader = testloader
 
     # plot_per_batch(opts)
 
@@ -210,11 +175,7 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
 
     formatter = logging.Formatter('%(asctime)s - %(name)s %(levelname)s: %(message)s',
-<<<<<<< HEAD
-                                  datefmt='%m/%d/%Y %H:%M:%S')
-=======
                                   datefmt='%d/%m/%Y %H:%M:%S')
->>>>>>> error_bars
     log_std = logging.StreamHandler(sys.stdout)
     log_std.setLevel(logging.INFO)
     log_std.setFormatter(formatter)
@@ -222,28 +183,10 @@ if __name__ == '__main__':
     log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/results.log', encoding='utf-8')
     log_f.setLevel(logging.DEBUG)
     log_f.setFormatter(formatter)
-<<<<<<< HEAD
-    
-=======
-
->>>>>>> error_bars
     logger.addHandler(log_std)
     logger.addHandler(log_f)
 
     opts = {
-<<<<<<< HEAD
-             'batch_size': 1024,
-             'epochs': 10,
-             'learning_rate': 1e-2,
-             'momentum': 0.9,
-             'weight_decay': 5e-4,
-             'model': 'resnet18',
-             'orth': False,
-             'nest': True,
-             'dataset': 'cifar10',
-             'layer': 'conv1'
-         }
-=======
         'batch_size': 1024,
         'epochs': 100,
         'learning_rate': 1e-2,
@@ -255,5 +198,4 @@ if __name__ == '__main__':
         'dataset': 'cifar10',
         'layer': 'conv1'
     }
->>>>>>> error_bars
     do_analysis(opts, True)
