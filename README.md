@@ -4,6 +4,8 @@
 Since you can't clone directly from the anonymous repo, try using the script here:
 [https://github.com/ShoufaChen/clone-anonymous4open](https://github.com/ShoufaChen/clone-anonymous4open)
 
+The contrastive_learning submodule is Facebook's [Barlow Twins](https://github.com/facebookresearch/barlowtwins) and then adapted with an orthogonalised version of LARS.
+
 ## Install experiment dependencies
 
 This may take some time
