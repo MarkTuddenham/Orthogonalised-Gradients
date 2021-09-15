@@ -3,7 +3,7 @@ from os import makedirs
 import os
 import sys
 
-import math as maths # :)
+import math as maths  # :)
 
 import logging
 
@@ -55,16 +55,19 @@ test_loader = None
 makedirs('./plots/', exist_ok=True)
 
 
-def calc_test_avg(opts):
+def calc_test_avg(opts, max_len=5):
     test_stats = load_tensor('results/test_stats', opts)
     if test_stats is None:
         return
-    test_mean = test_stats.mean(dim=0)
-    test_std = test_stats.std(dim=0)
-    test_stderr = test_std.div(maths.sqrt(test_stats[0].numel()))
+
+    test_mean = test_stats[:, :max_len].mean(dim=0)
+    test_std = test_stats[:, :max_len].std(dim=0)
+    num_runs = test_stats[:, 0].numel()
+    n = min(num_runs, max_len)
+    test_stderr = test_std.div(maths.sqrt(n))
 
     orth_text = ' w/ Orth ' if opts['orth'] else '         '
-    logger.info(f'{opts["model"]}{orth_text}- Test acc: {test_mean[1]:.3f}+-{test_stderr[1]:.3f}, Loss: {test_mean[0]:.3f}+-{test_stderr[0]:.3f}')
+    logger.info(f'{opts["model"]}{orth_text}- {n}/{num_runs} runs - Test acc: {test_mean[1]*100:.2f}+-{test_stderr[1]*100:.2f}, Loss: {test_mean[0]:.4f}+-{test_stderr[0]:.4f}')
 
 
 def setup_loss_acc_plot():
@@ -215,20 +218,20 @@ if __name__ == '__main__':
     log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/results.log', encoding='utf-8')
     log_f.setLevel(logging.DEBUG)
     log_f.setFormatter(formatter)
-    
+
     logger.addHandler(log_std)
     logger.addHandler(log_f)
 
     opts = {
-             'batch_size': 1024,
-             'epochs': 10,
-             'learning_rate': 1e-2,
-             'momentum': 0.9,
-             'weight_decay': 5e-4,
-             'model': 'resnet18',
-             'orth': False,
-             'nest': True,
-             'dataset': 'cifar10',
-             'layer': 'conv1'
-         }
+        'batch_size': 1024,
+        'epochs': 100,
+        'learning_rate': 1e-2,
+        'momentum': 0.9,
+        'weight_decay': 5e-4,
+        'model': 'resnet18',
+        'orth': False,
+        'nest': False,
+        'dataset': 'cifar10',
+        'layer': 'conv1'
+    }
     do_analysis(opts, True)
