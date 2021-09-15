@@ -30,7 +30,7 @@ image_size = 224
 
 input_size = (3, image_size, image_size)
 batch_size = 1024
-num_workers = 20
+num_workers = 5
 pin_memory = False
 
 train_set = None
