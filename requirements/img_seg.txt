@@ -1,5 +1,0 @@
-cython
-ninja
-mmpycocotools>=12.0.0
-mmcv-full==1.3.7
-mmdet
