@@ -1,5 +1,9 @@
 # Orthogonalised Gradients
 
+### Anonymous Repo
+Since you can't clone directly from the anonymous repo, try using the script here:
+[https://github.com/ShoufaChen/clone-anonymous4open](https://github.com/ShoufaChen/clone-anonymous4open)
+
 ## Install experiment dependencies
 
 This may take some time
