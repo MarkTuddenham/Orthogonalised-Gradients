@@ -207,7 +207,7 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
 
     formatter = logging.Formatter('%(asctime)s - %(name)s %(levelname)s: %(message)s',
-                                  datefmt='%m/%d/%Y %H:%M:%S')
+                                  datefmt='%d/%m/%Y %H:%M:%S')
     log_std = logging.StreamHandler(sys.stdout)
     log_std.setLevel(logging.INFO)
     log_std.setFormatter(formatter)

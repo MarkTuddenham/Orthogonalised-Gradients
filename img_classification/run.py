@@ -159,7 +159,7 @@ def train_loop(model, device, args, log_f):
 
     # lr_sched = th.optim.lr_scheduler.MultiStepLR(
     #     optimiser,
-    #     milestones=[35, 75])
+    #     milestones=[100, 150])
 
     if args.avoid_tqdm:
         epoch_bar = range(1, args.epochs + 1)
@@ -265,7 +265,7 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         # TODO: think theres a problem here -> when orth is skipped, cosine is not 1
         data_collectors['cosine'].append(cosine)
         data_collectors['frobenius'].append(frobenius)
-        logger.debug(f'Frobenius: {frobenius: .3f}, |g|: {grad_norm: .3f}, cosine: {cosine: .3f}')
+        # logger.debug(f'Frobenius: {frobenius: .3f}, |g|: {grad_norm: .3f}, cosine: {cosine: .3f}')
 
         status_str = (
             f"Batch {batch_idx}/{batch_count}: Loss {L: .3f}, "
@@ -285,7 +285,7 @@ def main():
     log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/run.log', encoding='utf-8')
     log_f.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s %(levelname)s: %(message)s',
-                                  datefmt='%m/%d/%Y %H:%M:%S')
+                                  datefmt='%d/%m/%Y %H:%M:%S')
     log_f.setFormatter(formatter)
     logger.addHandler(log_f)
     utils_logger.addHandler(log_f)
