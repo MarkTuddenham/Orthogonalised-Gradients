@@ -4,11 +4,12 @@ import os
 import sys
 
 import math as maths  # :)
+import numpy as np
 
 import logging
 
 import torch as th
-# from torch.nn.functional import cosine_similarity as cosine
+from torch.nn.functional import cosine_similarity as cosine
 
 from matplotlib import pyplot as plt
 from matplotlib import use as mpl_use
@@ -42,6 +43,24 @@ rect_fig_size = (fig_size * 1.618, fig_size)
 pic_type = '.png'
 
 makedirs('./plots/', exist_ok=True)
+
+
+def cosine_matrix(xs):
+    n = len(xs) if type(xs) is list else xs.shape[0]
+    C = th.zeros((n, n), device=xs[0].device)
+    for i in range(n):
+        for j in range(n):
+            C[i][j] = cosine(xs[i].flatten(), xs[j].flatten(), dim=0)
+    return C
+
+
+def cosine_matrix_flat(xs):
+    n = len(xs) if type(xs) is list else xs.shape[0]
+    cosines = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            cosines.append(cosine(xs[i].flatten(), xs[j].flatten(), dim=0))
+    return th.tensor(cosines)
 
 
 def calc_test_avg(opts, max_len=5):
@@ -149,12 +168,137 @@ def plot_per_batch(opts):
     plt.close(fig)
 
 
+layer_options = [
+    'conv1',
+
+    'layer1[0].conv1',
+    'layer1[0].conv2',
+    'layer1[1].conv1',
+    'layer1[1].conv2',
+    'layer1[2].conv1',
+    'layer1[2].conv2',
+
+    'layer2[0].conv1',
+    'layer2[0].conv2',
+    'layer2[1].conv1',
+    'layer2[1].conv2',
+    'layer2[2].conv1',
+    'layer2[2].conv2',
+
+    'layer3[0].conv1',
+    'layer3[0].conv2',
+    'layer3[1].conv1',
+    'layer3[1].conv2',
+    'layer3[2].conv1',
+    'layer3[2].conv2',
+]
+
+
+def dead_relus(opts, full):
+    if not full:
+        return
+
+    for layer in layer_options:
+        filter_grad_path = load_last_tensor(f'results/filter_grad_path_{layer}', opts)
+        if filter_grad_path is None:  # no results for this network
+            continue
+
+        n = len(filter_grad_path)
+        s = filter_grad_path[0].numel()
+
+        num_dead = []
+        for i in range(n):
+            num_dead.append(s - filter_grad_path[i].count_nonzero())
+
+        fig = plt.figure(figsize=rect_fig_size)
+        ax = fig.add_subplot(111)
+
+        ax.plot(num_dead, color='blue', ls='-', label='number of dead neurons')
+
+        ax.spines['right'].set_color(None)
+        ax.spines['top'].set_color(None)
+        ax.set_xlabel('Batch #')
+        ax.set_ylabel('count')
+
+        ax_leg = ax.legend()
+        for lh in ax_leg.legendHandles:
+            lh.set_alpha(1)
+
+        name = f'plots/dead_relu_{opts["model"]}_{layer}_{opts["orth"]}' f'{pic_type}'
+        logger.info(f'Saved plot {name}')
+        fig.savefig(name, bbox_inches='tight')
+        plt.close(fig)
+
+
+def plot_filter_cosimilarity(opts, full):
+    if not full:
+        return
+    for layer in layer_options:
+        # filter_x_path = load_last_tensor(f'results/filter_grad_path_{layer}', opts)
+        filter_x_path = load_last_tensor(f'results/filter_path_{layer}', opts)
+        if filter_x_path is None:  # no results for this network
+            continue
+
+        s = filter_x_path[0].numel()
+        threshold = 4 / maths.sqrt(s)
+
+        mean_cosines = []
+        var_cosines = []
+        n = len(filter_x_path)
+        skip = 10
+        for j in range(0, n, skip):
+            cosines = cosine_matrix_flat(filter_x_path[j].cuda())
+            mean_cosines.append(cosines.abs().mean().cpu())
+            var_cosines.append(cosines.abs().var().cpu())
+
+        x_size = len(mean_cosines)
+        N = 10
+        running_range = range(N // 2, x_size - N // 2 + 1)
+        running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
+        running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
+
+        cosines_fig = plt.figure(figsize=rect_fig_size)
+        cosines_ax = cosines_fig.add_subplot(111)
+
+        cosines_ax.scatter(range(x_size), mean_cosines, color='blue',
+                           marker='.', alpha=0.5, label='mean')
+        cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
+        cosines_ax.scatter(range(x_size), var_cosines, color='orange',
+                           marker='+', alpha=0.5, label='variance')
+        cosines_ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
+        cosines_ax.axhline(threshold, ls='--', color='k', label='cosine threshold')
+        cosines_ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
+
+        # cosines_ax.set_ylim((-0.1, 1))
+        # cosines_ax.set_ylim((-0.01, 0.02))
+
+        cosines_ax.spines['right'].set_color(None)
+        cosines_ax.spines['top'].set_color(None)
+        cosines_ax.set_xlabel(f'Batch # /{skip}s')
+        cosines_ax.set_ylabel('abs(cosine)')
+        cosines_ax.set_xlim((0, x_size))
+
+        cosines_ax_leg = cosines_ax.legend()
+        for lh in cosines_ax_leg.legendHandles:
+            lh.set_alpha(1)
+
+        name = f'plots/cosines_{opts["model"]}_{layer}_{opts["orth"]}' f'{pic_type}'
+        logger.info(f'Saved plot {name}')
+        cosines_fig.savefig(name, bbox_inches='tight')
+        plt.close(cosines_fig)
+
+
 def do_analysis(opts, full=False):
     logger.info('====== Analysis ======')
     opts = deepcopy(opts)
     logger.info('Starting opts: %s', opts)
 
     # plot_per_batch(opts)
+    plot_filter_cosimilarity(opts, full)
+    plot_filter_cosimilarity({**opts, 'orth': not opts['orth']}, full)
+
+    dead_relus(opts, full)
+    dead_relus({**opts, 'orth': not opts['orth']}, full)
 
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
@@ -176,14 +320,14 @@ if __name__ == '__main__':
 
     formatter = logging.Formatter('%(asctime)s - %(name)s %(levelname)s: %(message)s',
                                   datefmt='%d/%m/%Y %H:%M:%S')
-    log_std = logging.StreamHandler(sys.stdout)
-    log_std.setLevel(logging.INFO)
-    log_std.setFormatter(formatter)
+    log_stdout = logging.StreamHandler(sys.stdout)
+    log_stdout.setLevel(logging.INFO)
+    log_stdout.setFormatter(formatter)
 
     log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/results.log', encoding='utf-8')
     log_f.setLevel(logging.DEBUG)
     log_f.setFormatter(formatter)
-    logger.addHandler(log_std)
+    logger.addHandler(log_stdout)
     logger.addHandler(log_f)
 
     opts = {
@@ -192,10 +336,9 @@ if __name__ == '__main__':
         'learning_rate': 1e-2,
         'momentum': 0.9,
         'weight_decay': 5e-4,
-        'model': 'resnet18',
+        'model': 'resnet44',
         'orth': False,
         'nest': False,
         'dataset': 'cifar10',
-        'layer': 'conv1'
     }
     do_analysis(opts, True)

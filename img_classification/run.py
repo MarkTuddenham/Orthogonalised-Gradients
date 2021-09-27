@@ -80,8 +80,9 @@ def get_args():
                         help='Use tqdm progress bars or simple print (default: False)')
     parser.add_argument('--do-analysis', '-a', action='store_true', default=True,
                         help='Run the analysis while training (default: True)')
-    parser.add_argument('--layer', default='conv1',
-                        help='Name of the layer to sample from')
+    parser.add_argument('--layers', nargs='*',
+                        help=('Name of the layer to sample from'
+                              '(optional, e.g. --layers "conv1" "layer1[0].conv2")'))
     args = parser.parse_args()
     return args
 
@@ -93,6 +94,7 @@ def train_loop(model, device, args, log_f):
     del save_opts['avoid_tqdm']
     del save_opts['gpu_ids']
     del save_opts['do_analysis']
+    del save_opts['layers']
     logger.info(save_opts)
 
     # ==== Metric Containers ====
@@ -104,9 +106,10 @@ def train_loop(model, device, args, log_f):
         'grad_norm': [],
         'cosine': [],
         'frobenius': [],
-        'filter_path': [],
-        'filter_grad_path': [],
     }
+    for layer_name in args.layers:
+        data_collectors[f'filter_path_{layer_name}'] = []
+        data_collectors[f'filter_grad_path_{layer_name}'] = []
     # ==== / Metric Containers ====
 
     def save(overwrite=False, full_analysis=False, epoch=None):
@@ -220,7 +223,7 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
             total=batch_count)
 
     model.train()
-    weights = get_weights(model)
+    # weights = get_weights(model)
     for batch_idx, (x, y) in pbar:
         x, y = x.to(device), y.to(device)
         optimiser.zero_grad()
@@ -237,14 +240,12 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         pred = z.argmax(dim=1, keepdim=True)
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
-        # save conv filter & its grad to analyse path later on
-        # if args.model.startswith('resnet'):
-        #     layer = model.layer1[0].conv1
-        # else:
-        #     layer = getattr(model, args.layer, 'No %s layer.')
-
-        # data_collectors["filter_path"].append(layer.weight.detach().clone().cpu())
-        # data_collectors["filter_grad_path"].append(layer.weight.grad.detach().clone().cpu())
+        for layer_name in args.layers:
+            layer = eval("m." + layer_name, {'m': model})
+            data_collectors[f'filter_path_{layer_name}'].append(
+                layer.weight.detach().clone().cpu())
+            data_collectors[f'filter_grad_path_{layer_name}'].append(
+                layer.weight.grad.detach().clone().cpu())
 
         og_grads = clone_gradients(model, concat=False, preserve_shape=True)
         # og_grads_vec = clone_gradients(model) but avoids making two clones

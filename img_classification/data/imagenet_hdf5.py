@@ -94,7 +94,7 @@ def imagenet(args=None):
     train_set = ImageNetHDF5(root=f'{data_root}/train', transform=transform_train)
     test_set = ImageNetHDF5(root=f'{data_root}/val', transform=transform_test)
 
-    # root = '/ECShome/ECSdata/data_sets/ILSVRC2012'
+    # root = '.../data_sets/ILSVRC2012'
     # train_set = ImageFolder(root=f'{root}/train', transform=transform_train)
     # test_set = ImageFolder(root=f'{root}/val', transform=transform_test)
 
