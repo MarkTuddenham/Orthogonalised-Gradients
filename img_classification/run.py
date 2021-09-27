@@ -241,7 +241,11 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
         for layer_name in args.layers:
-            layer = eval("m." + layer_name, {'m': model})
+            if isinstance(model, th.nn.DataParallel):
+                layer = eval("m." + layer_name, {'m': model.module})
+            else:
+                layer = eval("m." + layer_name, {'m': model})
+
             data_collectors[f'filter_path_{layer_name}'].append(
                 layer.weight.detach().clone().cpu())
             data_collectors[f'filter_grad_path_{layer_name}'].append(
@@ -297,9 +301,10 @@ def main():
     device = get_device(args.no_cuda)
 
     model = models[args.model]().to(device)
+    logger.info(args)
     if args.gpu_ids is not None and len(args.gpu_ids) > 1:
         logger.info(f'Using DataParallel with {len(args.gpu_ids)} GPUs: {" ".join(args.gpu_ids)}')
-        model = th.nn.DataParallel(model, device_ids=map(str, args.gpu_ids))
+        model = th.nn.DataParallel(model, device_ids=list(map(int, args.gpu_ids)))
 
     # # Don't use with DataParallel either
     # if not args.model.startswith('densenet'):

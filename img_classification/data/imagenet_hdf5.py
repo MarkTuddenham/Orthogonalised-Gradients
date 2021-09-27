@@ -40,7 +40,7 @@ data_root = '/ECShome/ECSdata/data_sets/imagenet_hdf5'
 
 def set_data_path(path):
     global data_root
-    data_root = path
+    data_root = path + '/imagenet_hdf5'
 
 
 def get_train_gen(batch_size=batch_size):
@@ -116,7 +116,7 @@ def imagenet_transforms(args):
 
 
 class ImageNetHDF5(VisionDataset):
-    def __init__(self, root, cache_size=500, transform=None):
+    def __init__(self, root, cache_size=300, transform=None):
         super(ImageNetHDF5, self).__init__(root, transform=transform, target_transform=None)
 
         self.dest = pickle.load(open(os.path.join(root, 'dest.p'), 'rb'))
