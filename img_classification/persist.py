@@ -17,13 +17,14 @@ from os.path import getctime
 from json import dumps
 from json import dump
 from glob import glob
+from glob import escape
 
 
 Params = Dict[str, Any]
 HASH_LEN: int = 10
 
 
-def save_tensor(t: th.Tensor, path: str, params: Optional[Params]=None, overwrite:bool=False) -> None:
+def save_tensor(t: th.Tensor, path: str, params: Optional[Params] = None, overwrite: bool = False) -> None:
     """Save a tensor.
 
         Parameters:
@@ -45,16 +46,16 @@ def save_tensor(t: th.Tensor, path: str, params: Optional[Params]=None, overwrit
     th.save(t, f'{path}/{file_name}')
 
 
-
-def load_tensor(path: str, params: Optional[Params]) -> th.Tensor:
+def load_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]:
     """Load all the tensors into a stack."""
     path = get_path_with_hash(path, params)
-    files = glob(f'{path}/*')
+    files = glob(f'{escape(path)}/*')
     if len(files) == 0:
         return None
     tensors = [th.load(f) for f in files if not f.endswith('.json')]
     tensors = [i if isinstance(i, th.Tensor) else th.tensor(i) for i in tensors]
     return th.stack(tensors)
+
 
 def load_last_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]:
     """Load only the last saved tensor."""
@@ -65,9 +66,9 @@ def load_last_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]
 
 def get_last_file(path: str) -> Optional[str]:
     try:
-        path = max(glob(f'{path}/*'), key=getctime)
+        path = max(glob(f'{escape(path)}/*'), key=getctime)
     except ValueError:
-        path = None
+        return None
     return path
 
 
