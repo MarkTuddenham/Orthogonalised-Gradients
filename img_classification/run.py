@@ -18,8 +18,13 @@ from orth_optim import hook
 from orth_optim import logger as orth_logger
 
 from analysis import do_analysis
+from analysis import logger as analysis_logger
+
+from networks import BasicCNN_IR
 
 from persist import save_tensor
+
+from profiler import profile
 
 from utils import get_device
 from utils import get_weights
@@ -29,6 +34,7 @@ from utils import run_data
 from utils import models
 from utils import logger as utils_logger
 from utils import cosine_compare
+
 
 hook()
 
@@ -78,8 +84,8 @@ def get_args():
                         help='Save outputs? (default: False)')
     parser.add_argument('--avoid-tqdm', action='store_true', default=False,
                         help='Use tqdm progress bars or simple print (default: False)')
-    parser.add_argument('--do-analysis', '-a', action='store_true', default=True,
-                        help='Run the analysis while training (default: True)')
+    parser.add_argument('--do-analysis', '-a', action='store_true', default=False,
+                        help='Run the analysis while training (default: False)')
     parser.add_argument('--layers', nargs='*',
                         help=('Name of the layer to sample from'
                               '(optional, e.g. --layers "conv1" "layer1[0].conv2")'))
@@ -107,9 +113,13 @@ def train_loop(model, device, args, log_f):
         'cosine': [],
         'frobenius': [],
     }
-    for layer_name in args.layers:
-        data_collectors[f'filter_path_{layer_name}'] = []
-        data_collectors[f'filter_grad_path_{layer_name}'] = []
+    if args.layers is not None:
+        for layer_name in args.layers:
+            data_collectors[f'filter_path_{layer_name}'] = []
+            data_collectors[f'filter_grad_path_{layer_name}'] = []
+
+    if isinstance(model, BasicCNN_IR):
+        data_collectors['IR'] = []
     # ==== / Metric Containers ====
 
     def save(overwrite=False, full_analysis=False, epoch=None):
@@ -201,8 +211,8 @@ def train_loop(model, device, args, log_f):
                             f"Train Loss {train_loss:.3f}, "
                             f"Accuracy {train_accuracy:.2%}")
         if not args.avoid_tqdm:
+            logger.info(epoch_status_str)
             epoch_bar.set_description(epoch_status_str)
-        logger.info(epoch_status_str)
 
     test_loss, test_acc = run_data(model, device, test_loader, valid=False)
     save_tensor(th.tensor([test_loss, test_acc]), 'results/test_stats', save_opts)
@@ -240,16 +250,22 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
         pred = z.argmax(dim=1, keepdim=True)
         train_accuracy += pred.eq(y.view_as(pred)).sum().item()
 
-        for layer_name in args.layers:
-            if isinstance(model, th.nn.DataParallel):
-                layer = eval("m." + layer_name, {'m': model.module})
-            else:
-                layer = eval("m." + layer_name, {'m': model})
+        # Get IR if we are using BasicCNN_IR
+        # Since we're saving a lot of data, only append every 10 batches
+        if isinstance(model, BasicCNN_IR) and batch_idx % 10 == 0:
+            data_collectors['IR'].append(model.IR)
 
-            data_collectors[f'filter_path_{layer_name}'].append(
-                layer.weight.detach().clone().cpu())
-            data_collectors[f'filter_grad_path_{layer_name}'].append(
-                layer.weight.grad.detach().clone().cpu())
+        if args.layers is not None:
+            for layer_name in args.layers:
+                if isinstance(model, th.nn.DataParallel):
+                    layer = eval("m." + layer_name, {'m': model.module})
+                else:
+                    layer = eval("m." + layer_name, {'m': model})
+
+                data_collectors[f'filter_path_{layer_name}'].append(
+                    layer.weight.detach().clone().cpu())
+                data_collectors[f'filter_grad_path_{layer_name}'].append(
+                    layer.weight.grad.detach().clone().cpu())
 
         og_grads = clone_gradients(model, concat=False, preserve_shape=True)
         # og_grads_vec = clone_gradients(model) but avoids making two clones
@@ -283,6 +299,7 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
     return train_loss, train_accuracy
 
 
+@profile()
 def main():
 
     log_dir = os.environ.get('LOG_DIR', './logs/')
@@ -295,7 +312,7 @@ def main():
     logger.addHandler(log_f)
     utils_logger.addHandler(log_f)
     orth_logger.addHandler(log_f)
-    # analysis_logger.addHandler(log_f)
+    analysis_logger.addHandler(log_f)
 
     args = get_args()
     device = get_device(args.no_cuda)

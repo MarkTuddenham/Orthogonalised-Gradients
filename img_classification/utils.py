@@ -39,6 +39,7 @@ from networks.cifar10 import resnet110
 from networks.cifar10 import resnet1202
 
 from networks import BasicCNN
+from networks import BasicCNN_IR
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -49,6 +50,7 @@ models: Dict[
     Union[Type[th.nn.Module], Callable[[], th.nn.Module]]
 ] = {M.__name__: M for M in [
     BasicCNN,
+    BasicCNN_IR,
     resnet18,
     resnet34,
     resnet50,
@@ -88,11 +90,12 @@ def run_data(model: th.nn.Module,
             pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
 
-    loss /= len(data_loader.dataset)
-    acc: float = correct / len(data_loader.dataset)
+    len_ds = len(data_loader.dataset)
+    loss /= len_ds
+    acc: float = correct / len_ds
     if not valid:
         logger.info((f'Test: Average loss: {loss:.4f}, '
-                     f'Accuracy: {correct}/{len(data_loader.dataset)} '
+                     f'Accuracy: {correct}/{len_ds} '
                      f'({acc:.1%})'))
 
     return loss, acc

@@ -75,7 +75,9 @@ def calc_test_avg(opts, max_len=5):
     test_stderr = test_std.div(maths.sqrt(n))
 
     orth_text = ' w/ Orth ' if opts['orth'] else '         '
-    logger.info(f'{opts["model"]}{orth_text}- {n}/{num_runs} runs - Test acc: {test_mean[1]*100:.2f}+-{test_stderr[1]*100:.2f}, Loss: {test_mean[0]:.4f}+-{test_stderr[0]:.4f}')
+    logger.info((f'{opts["model"]}{orth_text}- {n}/{num_runs} runs - Test acc: '
+                 f'{test_mean[1]*100:.2f}+-{test_stderr[1]*100:.2f}, '
+                 f'Loss: {test_mean[0]:.4f}+-{test_stderr[0]:.4f}'))
 
 
 def setup_loss_acc_plot():
@@ -194,45 +196,65 @@ layer_options = [
 ]
 
 
-def dead_relus(opts, full):
-    if not full:
-        return
-
+def dead_relus(opts):
     for layer in layer_options:
         filter_grad_path = load_last_tensor(f'results/filter_grad_path_{layer}', opts)
         if filter_grad_path is None:  # no results for this network
             continue
 
-        n = len(filter_grad_path)
+        x_size = len(filter_grad_path)
         s = filter_grad_path[0].numel()
 
+        eps = 1e-4
         num_dead = []
-        for i in range(n):
-            num_dead.append(s - filter_grad_path[i].count_nonzero())
+        for i in range(x_size):
+            zeroed_grad_path = th.where(
+                filter_grad_path[i].abs() > eps,
+                filter_grad_path[i],
+                th.tensor(0.))
+            num_dead.append(s - zeroed_grad_path.count_nonzero())
+        num_dead = th.tensor(num_dead).float()
+
+        orth_text = ' w/ Orth ' if opts['orth'] else '         '
+        logger.info((f'{opts["model"]} {layer} {orth_text}- '
+                     f'Dead Neurons: {num_dead.mean(): .3e} '
+                     f'+-{num_dead.var(): .3e} out of {s: .3e}'))
+
+        N = 50
+        running_range = range(N // 2, x_size - N // 2 + 1)
+        running_count = np.convolve(num_dead, np.ones(N) / N, mode='valid')
 
         fig = plt.figure(figsize=rect_fig_size)
         ax = fig.add_subplot(111)
 
-        ax.plot(num_dead, color='blue', ls='-', label='number of dead neurons')
+        ax.scatter(range(x_size),
+                   num_dead,
+                   color='blue',
+                   marker='.',
+                   alpha=0.25,
+                   label='number of dead neurons')
+        ax.plot(running_range,
+                running_count,
+                color='orange',
+                ls='-',
+                label=f'running count (N={N})')
 
         ax.spines['right'].set_color(None)
         ax.spines['top'].set_color(None)
         ax.set_xlabel('Batch #')
-        ax.set_ylabel('count')
+        ax.set_ylabel(f'count ($eps={eps}$)')
 
         ax_leg = ax.legend()
         for lh in ax_leg.legendHandles:
             lh.set_alpha(1)
 
         name = f'plots/dead_relu_{opts["model"]}_{layer}_{opts["orth"]}' f'{pic_type}'
-        logger.info(f'Saved plot {name}')
+        logger.debug(f'Saved plot {name}')
         fig.savefig(name, bbox_inches='tight')
         plt.close(fig)
 
 
-def plot_filter_cosimilarity(opts, full):
-    if not full:
-        return
+def plot_filter_cosimilarity(opts):
     for layer in layer_options:
         # filter_x_path = load_last_tensor(f'results/filter_grad_path_{layer}', opts)
         filter_x_path = load_last_tensor(f'results/filter_path_{layer}', opts)
@@ -283,7 +305,62 @@ def plot_filter_cosimilarity(opts, full):
             lh.set_alpha(1)
 
         name = f'plots/cosines_{opts["model"]}_{layer}_{opts["orth"]}' f'{pic_type}'
-        logger.info(f'Saved plot {name}')
+        logger.debug(f'Saved plot {name}')
+        cosines_fig.savefig(name, bbox_inches='tight')
+        plt.close(cosines_fig)
+
+
+def ir_cosimilarity(opts):
+    for layer in layer_options:
+        irs = load_last_tensor('results/IR', opts)
+        if irs is None:  # no results for this network
+            continue
+
+        num_irs = len(irs[0])
+
+        mean_cosines = []
+        var_cosines = []
+        minibatch_count = len(irs)
+        for mb in range(minibatch_count):
+            for ir in range(num_irs):
+                minibatch_ir = irs[mb][ir]
+                for sample in range(0, len(minibatch_ir), 100):
+                    cosines = cosine_matrix_flat(minibatch_ir[sample].cuda())
+                    mean_cosines.append(cosines.abs().mean().cpu())
+                    var_cosines.append(cosines.abs().var().cpu())
+
+        x_size = len(mean_cosines)
+        N = 10
+        running_range = range(N // 2, x_size - N // 2 + 1)
+        running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
+        running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
+
+        cosines_fig = plt.figure(figsize=rect_fig_size)
+        cosines_ax = cosines_fig.add_subplot(111)
+
+        cosines_ax.scatter(range(x_size), mean_cosines, color='blue',
+                           marker='.', alpha=0.5, label='mean')
+        cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
+        cosines_ax.scatter(range(x_size), var_cosines, color='orange',
+                           marker='+', alpha=0.5, label='variance')
+        cosines_ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
+        cosines_ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
+
+        # cosines_ax.set_ylim((-0.1, 1))
+        # cosines_ax.set_ylim((-0.01, 0.02))
+
+        cosines_ax.spines['right'].set_color(None)
+        cosines_ax.spines['top'].set_color(None)
+        cosines_ax.set_xlabel('Batch # /10s')
+        cosines_ax.set_ylabel('abs(cosine)')
+        cosines_ax.set_xlim((0, x_size))
+
+        cosines_ax_leg = cosines_ax.legend()
+        for lh in cosines_ax_leg.legendHandles:
+            lh.set_alpha(1)
+
+        name = f'plots/IR_cosines_{opts["model"]}_{opts["orth"]}' f'{pic_type}'
+        logger.debug(f'Saved plot {name}')
         cosines_fig.savefig(name, bbox_inches='tight')
         plt.close(cosines_fig)
 
@@ -293,12 +370,16 @@ def do_analysis(opts, full=False):
     opts = deepcopy(opts)
     logger.info('Starting opts: %s', opts)
 
-    # plot_per_batch(opts)
-    plot_filter_cosimilarity(opts, full)
-    plot_filter_cosimilarity({**opts, 'orth': not opts['orth']}, full)
+    if full:
+        # plot_per_batch(opts)
+        plot_filter_cosimilarity(opts)
+        plot_filter_cosimilarity({**opts, 'orth': not opts['orth']})
 
-    dead_relus(opts, full)
-    dead_relus({**opts, 'orth': not opts['orth']}, full)
+        dead_relus(opts)
+        dead_relus({**opts, 'orth': not opts['orth']})
+
+        ir_cosimilarity(opts)
+        ir_cosimilarity({**opts, 'orth': not opts['orth']})
 
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
@@ -332,11 +413,11 @@ if __name__ == '__main__':
 
     opts = {
         'batch_size': 1024,
-        'epochs': 100,
+        'epochs': 50,
         'learning_rate': 1e-2,
         'momentum': 0.9,
         'weight_decay': 5e-4,
-        'model': 'resnet44',
+        'model': 'BasicCNN_IR',
         'orth': False,
         'nest': False,
         'dataset': 'cifar10',
