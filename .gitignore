@@ -1,5 +1,6 @@
 *slurm*
 *.env
+*.prof
 
 img_classification/plots/
 img_classification/results/
