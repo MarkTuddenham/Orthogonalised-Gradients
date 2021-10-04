@@ -45,11 +45,11 @@ class BasicCNN_IR(nn.Module):
     def forward(self, x):
         self.IR = []
         x = F.relu(self.bn1(self.conv1(x)))
-        self.IR.append(x.clone().detach().cpu())
+        self.IR.append(x.clone().detach()[:10, :].cpu())
         x = F.relu(self.bn2(self.conv2(x)))
-        self.IR.append(x.clone().detach().cpu())
+        self.IR.append(x.clone().detach()[:10, :].cpu())
         x = F.relu(self.bn3(self.conv3(x)))
-        self.IR.append(x.clone().detach().cpu())
+        self.IR.append(x.clone().detach()[:10, :].cpu())
 
         x = x.view(-1, self.fc1_size)
         x = self.fc1(x)
