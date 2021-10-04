@@ -215,8 +215,8 @@ def train_loop(model, device, args, log_f):
                             f"Accuracy {valid_accuracy:.2%}; "
                             f"Train Loss {train_loss:.3f}, "
                             f"Accuracy {train_accuracy:.2%}")
+        logger.info(epoch_status_str)
         if not args.avoid_tqdm:
-            logger.info(epoch_status_str)
             epoch_bar.set_description(epoch_status_str)
 
     test_loss, test_acc = run_data(model, device, test_loader, valid=False)
