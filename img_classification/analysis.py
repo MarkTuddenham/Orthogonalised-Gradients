@@ -3,7 +3,6 @@ from os import makedirs
 import os
 import sys
 
-import math as maths  # :)
 import numpy as np
 
 import logging
@@ -16,6 +15,8 @@ from matplotlib import use as mpl_use
 
 from persist import load_last_tensor
 from persist import load_tensor
+
+from profiler import profile
 
 # from utils import get_device
 from utils import models
@@ -38,6 +39,7 @@ th.set_printoptions(
 
 fig_size = 6  # 4
 rect_fig_size = (fig_size * 1.618, fig_size)
+rect_fig_size_thin = (fig_size * 1.618, fig_size / 1.618)
 # rect_fig_size = (fig_size * 2, fig_size)
 # rect_fig_size = (fig_size * 2 * 1.618, fig_size)
 pic_type = '.png'
@@ -72,7 +74,7 @@ def calc_test_avg(opts, max_len=5):
     test_std = test_stats[:, :max_len].std(dim=0)
     num_runs = test_stats[:, 0].numel()
     n = min(num_runs, max_len)
-    test_stderr = test_std.div(maths.sqrt(n))
+    test_stderr = test_std.div(np.sqrt(n))
 
     orth_text = ' w/ Orth ' if opts['orth'] else '         '
     logger.info((f'{opts["model"]}{orth_text}- {n}/{num_runs} runs - Test acc: '
@@ -165,11 +167,12 @@ def plot_per_batch(opts):
 
         ax.plot(diff, label=bs)
 
-    ax.legend(loc='lower right')
+    ax.legend(loc='lower right', frameon=False)
     fig.savefig('plots/acc_per_batch' + pic_type, bbox_inches='tight')
     plt.close(fig)
 
 
+# only does the resnet ones
 layer_options = [
     'conv1',
 
@@ -244,7 +247,7 @@ def dead_relus(opts):
         ax.set_xlabel('Batch #')
         ax.set_ylabel(f'count ($eps={eps}$)')
 
-        ax_leg = ax.legend()
+        ax_leg = ax.legend(frameon=False)
         for lh in ax_leg.legendHandles:
             lh.set_alpha(1)
 
@@ -253,118 +256,158 @@ def dead_relus(opts):
         fig.savefig(name, bbox_inches='tight')
         plt.close(fig)
 
+        del num_dead
+        del filter_grad_path
+
 
 def plot_filter_cosimilarity(opts):
     for layer in layer_options:
-        # filter_x_path = load_last_tensor(f'results/filter_grad_path_{layer}', opts)
-        filter_x_path = load_last_tensor(f'results/filter_path_{layer}', opts)
-        if filter_x_path is None:  # no results for this network
-            continue
-
-        s = filter_x_path[0].numel()
-        threshold = 4 / maths.sqrt(s)
-
-        mean_cosines = []
-        var_cosines = []
-        n = len(filter_x_path)
         skip = 10
-        for j in range(0, n, skip):
-            cosines = cosine_matrix_flat(filter_x_path[j].cuda())
-            mean_cosines.append(cosines.abs().mean().cpu())
-            var_cosines.append(cosines.abs().var().cpu())
 
-        x_size = len(mean_cosines)
-        N = 10
-        running_range = range(N // 2, x_size - N // 2 + 1)
-        running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
-        running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
+        fig = plt.figure(figsize=rect_fig_size_thin)
+        ax = fig.add_subplot(111)
+        ax.spines['right'].set_color(None)
+        ax.spines['top'].set_color(None)
+        ax.set_xlabel(f'Batch # /{skip}s')
+        ax.set_ylabel('abs(cosine)')
+        # ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
 
-        cosines_fig = plt.figure(figsize=rect_fig_size)
-        cosines_ax = cosines_fig.add_subplot(111)
+        colours = ['blue', 'orange']
 
-        cosines_ax.scatter(range(x_size), mean_cosines, color='blue',
-                           marker='.', alpha=0.5, label='mean')
-        cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
-        cosines_ax.scatter(range(x_size), var_cosines, color='orange',
-                           marker='+', alpha=0.5, label='variance')
-        cosines_ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
-        cosines_ax.axhline(threshold, ls='--', color='k', label='cosine threshold')
-        cosines_ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
+        should_save = False
+
+        for orth in [False, True]:
+            # filter_x_path = load_last_tensor(f'results/filter_grad_path_{layer}',
+            #         {**opts, 'orth': orth})
+            filter_x_path = load_last_tensor(f'results/filter_path_{layer}', {**opts, 'orth': orth})
+            if filter_x_path is None:  # no results for this network
+                continue
+
+            should_save = True
+
+            s = filter_x_path[0].numel()
+            threshold = 4 / np.sqrt(s)
+
+            mean_cosines = []
+            var_cosines = []
+            n = len(filter_x_path)
+            for j in range(0, n, skip):
+                cosines = cosine_matrix_flat(filter_x_path[j].cuda())
+                mean_cosines.append(cosines.abs().mean().cpu())
+                var_cosines.append(cosines.abs().var().cpu())
+
+            x_size = len(mean_cosines)
+            ax.set_xlim((0, x_size))
+
+            # N = 10
+            # running_range = range(N // 2, x_size - N // 2 + 1)
+            # running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
+            # running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
+
+            orth_text = ' w/ Orth ' if orth else ''
+            ax.plot(range(x_size), mean_cosines, color=colours[orth], label='mean' + orth_text)
+            # ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
+            # ax.scatter(range(x_size), var_cosines, color='orange',
+            #                    marker='+', alpha=0.5, label='variance')
+            # ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
+
+            del filter_x_path
+            del mean_cosines
+            del var_cosines
+            # del running_mean
+            # del running_var
 
         # cosines_ax.set_ylim((-0.1, 1))
         # cosines_ax.set_ylim((-0.01, 0.02))
 
-        cosines_ax.spines['right'].set_color(None)
-        cosines_ax.spines['top'].set_color(None)
-        cosines_ax.set_xlabel(f'Batch # /{skip}s')
-        cosines_ax.set_ylabel('abs(cosine)')
-        cosines_ax.set_xlim((0, x_size))
+        if should_save:
+            ax.axhline(threshold, ls='--', color='k', label='cosine threshold')
 
-        cosines_ax_leg = cosines_ax.legend()
-        for lh in cosines_ax_leg.legendHandles:
-            lh.set_alpha(1)
+            cosines_ax_leg = ax.legend(frameon=False)
+            for lh in cosines_ax_leg.legendHandles:
+                lh.set_alpha(1)
 
-        name = f'plots/cosines_{opts["model"]}_{layer}_{opts["orth"]}' f'{pic_type}'
-        logger.debug(f'Saved plot {name}')
-        cosines_fig.savefig(name, bbox_inches='tight')
-        plt.close(cosines_fig)
+            name = f'plots/cosines_{opts["model"]}_{layer}{pic_type}'
+            logger.debug(f'Saved plot {name}')
+            fig.savefig(name, bbox_inches='tight')
+            plt.close(fig)
 
 
 def ir_cosimilarity(opts):
-    for layer in layer_options:
-        irs = load_last_tensor('results/IR', opts)
+    fig = plt.figure(figsize=rect_fig_size)
+    ax = fig.add_subplot(111)
+    ax.set_ylim((0, 0.62))
+    # cosines_ax.set_ylim((-0.1, 1))
+    # cosines_ax.set_ylim((-0.01, 0.02))
+
+    ax.spines['right'].set_color(None)
+    ax.spines['top'].set_color(None)
+    ax.set_xlabel('Batch # /10s')
+    ax.set_ylabel('abs(cosine)')
+
+    # ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
+
+    colours = ['blue', 'orange']
+
+    should_save = False
+
+    for orth in [False, True]:
+        irs = load_last_tensor('results/IR', {**opts, 'orth': orth})
         if irs is None:  # no results for this network
             continue
 
+        should_save = True
         num_irs = len(irs[0])
 
-        mean_cosines = []
         var_cosines = []
+        mean_cosines = []
         minibatch_count = len(irs)
         for mb in range(minibatch_count):
             for ir in range(num_irs):
                 minibatch_ir = irs[mb][ir]
-                for sample in range(0, len(minibatch_ir), 100):
+                for sample in range(len(minibatch_ir)):
                     cosines = cosine_matrix_flat(minibatch_ir[sample].cuda())
                     mean_cosines.append(cosines.abs().mean().cpu())
                     var_cosines.append(cosines.abs().var().cpu())
 
+        logger.info('ir_cosimilarity opts: %s', list(map(opts.get, ['model', 'orth'])))
+        logger.info(f'cosines : {np.mean(mean_cosines) :.3f}+-{np.var(var_cosines):.3f}')
+        logger.info(
+            f'all cosine : mean: {np.mean(mean_cosines) :.3f} var: {np.mean(var_cosines):.3f}')
+        logger.info(f'last cosine : {mean_cosines[-1]:.3f} var: {var_cosines[-1]:.3f}')
+
         x_size = len(mean_cosines)
-        N = 10
-        running_range = range(N // 2, x_size - N // 2 + 1)
-        running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
-        running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
 
-        cosines_fig = plt.figure(figsize=rect_fig_size)
-        cosines_ax = cosines_fig.add_subplot(111)
+        # N = 10
+        # running_range = range(N // 2, x_size - N // 2 + 1)
+        # running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
+        # running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
+        orth_text = ' w/ Orth ' if orth else ''
+        ax.scatter(range(x_size), mean_cosines, color=colours[orth],
+                   marker='.', alpha=0.4, linewidths=0, label='mean' + orth_text)
+        # cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
+        # ax.scatter(range(x_size), var_cosines, color='orange',
+        #                    marker='+', alpha=0.25, label='variance')
+        # cosines_ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
 
-        cosines_ax.scatter(range(x_size), mean_cosines, color='blue',
-                           marker='.', alpha=0.5, label='mean')
-        cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
-        cosines_ax.scatter(range(x_size), var_cosines, color='orange',
-                           marker='+', alpha=0.5, label='variance')
-        cosines_ax.plot(running_range, running_var, color='orange', ls='--', label='running var')
-        cosines_ax.axhline(0, ls='-', lw=0.5, alpha=0.5, color='k')
+        del irs
+        del mean_cosines
+        del var_cosines
 
-        # cosines_ax.set_ylim((-0.1, 1))
-        # cosines_ax.set_ylim((-0.01, 0.02))
+    if should_save:
+        ax.set_xlim((0, x_size))
 
-        cosines_ax.spines['right'].set_color(None)
-        cosines_ax.spines['top'].set_color(None)
-        cosines_ax.set_xlabel('Batch # /10s')
-        cosines_ax.set_ylabel('abs(cosine)')
-        cosines_ax.set_xlim((0, x_size))
-
-        cosines_ax_leg = cosines_ax.legend()
+        cosines_ax_leg = ax.legend(frameon=False)
         for lh in cosines_ax_leg.legendHandles:
             lh.set_alpha(1)
 
-        name = f'plots/IR_cosines_{opts["model"]}_{opts["orth"]}' f'{pic_type}'
+        name = f'plots/IR_cosines_{opts["model"]}' f'{pic_type}'
         logger.debug(f'Saved plot {name}')
-        cosines_fig.savefig(name, bbox_inches='tight')
-        plt.close(cosines_fig)
+        fig.savefig(name, bbox_inches='tight')
+        plt.close(fig)
 
 
+@profile()
 def do_analysis(opts, full=False):
     logger.info('====== Analysis ======')
     opts = deepcopy(opts)
@@ -372,14 +415,13 @@ def do_analysis(opts, full=False):
 
     if full:
         # plot_per_batch(opts)
+
         plot_filter_cosimilarity(opts)
-        plot_filter_cosimilarity({**opts, 'orth': not opts['orth']})
 
         dead_relus(opts)
         dead_relus({**opts, 'orth': not opts['orth']})
 
         ir_cosimilarity(opts)
-        ir_cosimilarity({**opts, 'orth': not opts['orth']})
 
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
@@ -413,11 +455,11 @@ if __name__ == '__main__':
 
     opts = {
         'batch_size': 1024,
-        'epochs': 50,
+        'epochs': 100,
         'learning_rate': 1e-2,
         'momentum': 0.9,
         'weight_decay': 5e-4,
-        'model': 'BasicCNN_IR',
+        'model': 'resnet20',
         'orth': False,
         'nest': False,
         'dataset': 'cifar10',
