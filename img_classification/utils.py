@@ -25,6 +25,9 @@ from torchvision.models import resnet152
 from torchvision.models import vgg11
 from torchvision.models import vgg13
 from torchvision.models import vgg16
+from torchvision.models import vgg11_bn
+from torchvision.models import vgg13_bn
+from torchvision.models import vgg16_bn
 from torchvision.models import inception_v3
 from torchvision.models import densenet121
 from torchvision.models import densenet161
@@ -69,7 +72,10 @@ models: Dict[
     wide_resnet50_2,
     vgg11,
     vgg13,
-    vgg16
+    vgg16,
+    vgg11_bn,
+    vgg13_bn,
+    vgg16_bn
 ]}
 
 
