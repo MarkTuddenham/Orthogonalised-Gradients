@@ -75,6 +75,8 @@ def get_args():
                         help='Use Nesterov momentum (defualt: False)')
     parser.add_argument('--dataset', default='cifar10',
                         help='Which data set to train on: cifar10/imagenet (default: cifar10)')
+    parser.add_argument('--schedule', nargs='*',
+                        help='learning rate schedue x 0.1 at these epochs (e.g. --schedule 100 150)')
 
     parser.add_argument('--no-cuda', '-nc', action='store_true', default=False,
                         help='disables CUDA training (default: False)')
@@ -114,6 +116,7 @@ def train_loop(model, device, args, log_f):
         'frobenius': [],
     }
     if args.layers is not None:
+        logger.info('Saving layers %s', args.layers)
         for layer_name in args.layers:
             data_collectors[f'filter_path_{layer_name}'] = []
             data_collectors[f'filter_grad_path_{layer_name}'] = []
@@ -170,9 +173,10 @@ def train_loop(model, device, args, log_f):
         nesterov=args.nest,
         orth=args.orth)
 
-    # lr_sched = th.optim.lr_scheduler.MultiStepLR(
-    #     optimiser,
-    #     milestones=[100, 150])
+    if args.schedule is not None:
+        lr_sched = th.optim.lr_scheduler.MultiStepLR(
+            optimiser,
+            milestones=list(map(int, args.schedule)))
 
     if args.avoid_tqdm:
         epoch_bar = range(1, args.epochs + 1)
@@ -191,7 +195,8 @@ def train_loop(model, device, args, log_f):
             device,
             data_collectors)
 
-        # lr_sched.step()
+        if args.schedule is not None:
+            lr_sched.step()
 
         # ==== Calculate metrics ====
         model.eval()
