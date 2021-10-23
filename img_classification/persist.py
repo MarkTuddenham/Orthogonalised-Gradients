@@ -3,6 +3,7 @@
 """Functions to persist experiment results."""
 from typing import Dict
 from typing import Any
+from typing import Union
 from typing import Optional
 
 import torch as th
@@ -46,15 +47,18 @@ def save_tensor(t: th.Tensor, path: str, params: Optional[Params] = None, overwr
     th.save(t, f'{path}/{file_name}')
 
 
-def load_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]:
+def load_tensor(path: str, params: Optional[Params]) -> Optional[Union[th.Tensor, Any]]:
     """Load all the tensors into a stack."""
     path = get_path_with_hash(path, params)
     files = glob(f'{escape(path)}/*')
     if len(files) == 0:
         return None
     tensors = [th.load(f) for f in files if not f.endswith('.json')]
-    tensors = [i if isinstance(i, th.Tensor) else th.tensor(i) for i in tensors]
-    return th.stack(tensors)
+    try:
+        tensors = [i if isinstance(i, th.Tensor) else th.tensor(i) for i in tensors]
+        return th.stack(tensors)
+    except Exception:
+        return tensors
 
 
 def load_last_tensor(path: str, params: Optional[Params]) -> Optional[th.Tensor]:
