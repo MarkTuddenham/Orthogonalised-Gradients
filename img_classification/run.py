@@ -1,8 +1,8 @@
+from typing import Dict
+from typing import Any
+
 import os
-import argparse
 import logging
-from functools import partial
-from copy import copy
 from dotenv import load_dotenv
 from threading import Thread
 
@@ -12,20 +12,14 @@ from tqdm.auto import trange
 import torch as th
 from torch.nn import functional as F
 
-# from torchsummary import summary
-
 from orth_optim import hook
 from orth_optim import logger as orth_logger
 
+from networks import BasicCNN_IR
 from analysis import do_analysis
 from analysis import logger as analysis_logger
-
-from networks import BasicCNN_IR
-
 from persist import save_tensor
-
 from profiler import profile
-
 from utils import get_device
 from utils import get_weights
 from utils import get_gradients
@@ -34,7 +28,8 @@ from utils import run_data
 from utils import models
 from utils import logger as utils_logger
 from utils import cosine_compare
-
+from utils import get_save_opts_from_args
+from utils import get_args
 
 hook()
 
@@ -54,92 +49,40 @@ load_dotenv('../')
 load_dotenv()
 
 
-def get_args():
-    parser = argparse.ArgumentParser(
-        description='Image Classification w/ SGD and Orthogonalised SGD')
-    parser.add_argument('--batch-size', '--bs', type=int, default=2**10, metavar='N',
-                        help='input batch size for training (default: 1024)')
-    parser.add_argument('--epochs', '--eps', type=int, default=20, metavar='N',
-                        help='number of epochs to train (default: 20)')
-    parser.add_argument('--learning-rate', '--lr', type=float, default=1e-2, metavar='LR',
-                        help='learning rate (default: 1e-2)')
-    parser.add_argument('--momentum', '--mom', type=float, default=0.9, metavar='mom',
-                        help='momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', type=float, default=0,
-                        metavar='WD', help='weight decay (default: 0)')
-    parser.add_argument('--model', '-m', default='BasicCNN',
-                        help='Name of the model to use (default: BasicCNN)')
-    parser.add_argument('--orth', '-o', action='store_true', default=False,
-                        help='Use orthogonalised SGD (defualt: False)')
-    parser.add_argument('--nest', '-n', action='store_true', default=False,
-                        help='Use Nesterov momentum (defualt: False)')
-    parser.add_argument('--dataset', default='cifar10',
-                        help='Which data set to train on: cifar10/imagenet (default: cifar10)')
-    parser.add_argument('--schedule', nargs='*',
-                        help='learning rate schedue x 0.1 at these epochs (e.g. --schedule 100 150)')
-
-    parser.add_argument('--no-cuda', '-nc', action='store_true', default=False,
-                        help='disables CUDA training (default: False)')
-    parser.add_argument('--gpu-ids', nargs='*',
-                        help='List the gpu ids to train on (optional, e.g. --gpu-ids 0 1 2 3 4)')
-    parser.add_argument('--save', '-s', action='store_true', default=False,
-                        help='Save outputs? (default: False)')
-    parser.add_argument('--avoid-tqdm', action='store_true', default=False,
-                        help='Use tqdm progress bars or simple print (default: False)')
-    parser.add_argument('--do-analysis', '-a', action='store_true', default=False,
-                        help='Run the analysis while training (default: False)')
-    parser.add_argument('--layers', nargs='*',
-                        help=('Name of the layer to sample from'
-                              '(optional, e.g. --layers "conv1" "layer1[0].conv2")'))
-    args = parser.parse_args()
-    return args
+def save_data(
+        data: Dict[str, Any],
+        save_opts,
+        overwrite: bool = False,
+        analysis: bool = False,
+        full_analysis: bool = False):
+    for k, v in data.items():
+        save_tensor(v, 'results/' + k, save_opts, overwrite)
+    if analysis:
+        Thread(target=do_analysis, args=(save_opts, full_analysis)).start()
 
 
-def train_loop(model, device, args, log_f):
-    save_opts = copy(vars(args))
-    del save_opts['save']
-    del save_opts['no_cuda']
-    del save_opts['avoid_tqdm']
-    del save_opts['gpu_ids']
-    del save_opts['do_analysis']
-    del save_opts['layers']
-    logger.info(save_opts)
+def get_optim(parameters, args):
+    if args.adam == 0:
+        optimiser = th.optim.SGD(
+            parameters,
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            momentum=args.momentum,
+            nesterov=args.nest,
+            orth=args.orth,
+            norm=args.norm)
+    else:
+        optimiser = th.optim.Adam(
+            parameters,
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            betas=(args.momentum, args.adam),
+            orth=args.orth,
+            norm=args.norm)
+    return optimiser
 
-    # ==== Metric Containers ====
-    valid_losses = []
-    valid_accuracies = []
-    train_losses = []
-    train_accuracies = []
-    data_collectors = {
-        'grad_norm': [],
-        'cosine': [],
-        'frobenius': [],
-    }
-    if args.layers is not None:
-        logger.info('Saving layers %s', args.layers)
-        for layer_name in args.layers:
-            data_collectors[f'filter_path_{layer_name}'] = []
-            data_collectors[f'filter_grad_path_{layer_name}'] = []
 
-    if isinstance(model, BasicCNN_IR):
-        data_collectors['IR'] = []
-    # ==== / Metric Containers ====
-
-    def save(overwrite=False, full_analysis=False, epoch=None):
-        st = partial(save_tensor, params=save_opts, overwrite=overwrite)
-        if args.save:
-            st(model.state_dict(), 'results/model')
-            st(valid_losses, 'results/valid_losses')
-            st(valid_accuracies, 'results/valid_accuracies')
-            st(train_losses, 'results/train_losses')
-            st(train_accuracies, 'results/train_accuracies')
-            for key, val in data_collectors.items():
-                st(val, 'results/' + key)
-
-            if args.do_analysis and (epoch is None or epoch % 10 == 0):
-                Thread(target=do_analysis, args=(save_opts, full_analysis)).start()
-    save()  # Create a new save to be overwritten later
-
+def get_data_loaders(args, log_f):
     logger.debug('Getting data loaders')
     if args.dataset == 'cifar10':
         from data.cifar10 import set_data_path
@@ -164,20 +107,74 @@ def train_loop(model, device, args, log_f):
     valid_loader = get_valid_gen(args.batch_size)
     test_loader = get_test_gen(args.batch_size)
     logger.debug('Got data loaders')
+    return train_loader, valid_loader, test_loader
 
-    optimiser = th.optim.SGD(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-        momentum=args.momentum,
-        nesterov=args.nest,
-        orth=args.orth)
 
+def train(model, device, args, log_f):
+    save_opts = get_save_opts_from_args(args)
+    logger.info(save_opts)
+
+    # ==== Metric Containers ====
+    data_collectors = {
+        'model': None,
+        'grad_norm': [],
+        'cosine': [],
+        'frobenius': [],
+        'valid_losses': [],
+        'valid_accuracies': [],
+        'train_losses': [],
+        'train_accuracies': [],
+    }
+
+    if args.layers is not None:
+        logger.info('Saving layers %s', args.layers)
+        for layer_name in args.layers:
+            data_collectors[f'filter_path_{layer_name}'] = []
+            data_collectors[f'filter_grad_path_{layer_name}'] = []
+
+    if isinstance(model, BasicCNN_IR):
+        data_collectors['IR'] = []
+    # ==== / Metric Containers ====
+
+    if args.save:
+        save_data(data_collectors, save_opts)  # Create a new save to be overwritten later
+
+    train_loader, valid_loader, test_loader = get_data_loaders(args, log_f)
+
+    optimiser = get_optim(model.parameters(), args)
+
+    lr_sched = None
     if args.schedule is not None:
         lr_sched = th.optim.lr_scheduler.MultiStepLR(
             optimiser,
             milestones=list(map(int, args.schedule)))
 
+    train_loop(model,
+               optimiser,
+               train_loader,
+               valid_loader,
+               device,
+               data_collectors,
+               args,
+               save_opts,
+               lr_sched)
+
+    test_loss, test_acc = run_data(model, device, test_loader, valid=False)
+    save_tensor(th.tensor([test_loss, test_acc]), 'results/test_stats', save_opts)
+    logger.info(f'Test Loss: {test_loss: .3f}, Acc: {test_acc: .3f}')
+    if args.save:
+        save_data(data_collectors, save_opts, overwrite=True, analysis=True, full_analysis=True)
+
+
+def train_loop(model,
+               optimiser,
+               train_loader,
+               valid_loader,
+               device,
+               data_collectors,
+               args,
+               save_opts,
+               lr_sched=None):
     if args.avoid_tqdm:
         epoch_bar = range(1, args.epochs + 1)
     else:
@@ -186,7 +183,6 @@ def train_loop(model, device, args, log_f):
     logger.info('Epoch The Zeroth')
 
     for epoch in epoch_bar:
-
         train_loss, train_accuracy = do_epoch(
             args,
             model,
@@ -204,11 +200,14 @@ def train_loop(model, device, args, log_f):
         train_accuracy /= len(train_loader.dataset)
         valid_loss, valid_accuracy = run_data(model, device,
                                               valid_loader, valid=True)
-        train_losses.append(train_loss)
-        train_accuracies.append(train_accuracy)
-        valid_losses.append(valid_loss)
-        valid_accuracies.append(valid_accuracy)
-        save(overwrite=True, epoch=epoch)
+        data_collectors['train_losses'].append(train_loss)
+        data_collectors['train_accuracies'].append(train_accuracy)
+        data_collectors['valid_losses'].append(valid_loss)
+        data_collectors['valid_accuracies'].append(valid_accuracy)
+
+        if args.save:
+            data_collectors['model'] = model.state_dict()
+            save_data(data_collectors, save_opts, overwrite=True, analysis=epoch % 10 == 0)
         # ==== / Calculate metrics ====
 
         epoch_status_str = (f"Epoch {epoch}: Valid Loss {valid_loss:.3f}, "
@@ -218,11 +217,6 @@ def train_loop(model, device, args, log_f):
         logger.info(epoch_status_str)
         if not args.avoid_tqdm:
             epoch_bar.set_description(epoch_status_str)
-
-    test_loss, test_acc = run_data(model, device, test_loader, valid=False)
-    save_tensor(th.tensor([test_loss, test_acc]), 'results/test_stats', save_opts)
-    logger.info(f'Test Loss: {test_loss: .3f}, Acc: {test_acc: .3f}')
-    save(overwrite=True, full_analysis=True)
 
 
 def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
@@ -306,7 +300,6 @@ def do_epoch(args, model, optimiser, train_loader, device, data_collectors):
 
 @profile()
 def main():
-
     log_dir = os.environ.get('LOG_DIR', './logs/')
     os.makedirs(log_dir, exist_ok=True)
     log_f = logging.FileHandler(f'{os.path.dirname(log_dir)}/run.log', encoding='utf-8')
@@ -332,7 +325,7 @@ def main():
     # if not args.model.startswith('densenet'):
     #     summary(model, input_size, device=device)
 
-    train_loop(model, device, args, log_f)
+    train(model, device, args, log_f)
 
 
 if __name__ == '__main__':

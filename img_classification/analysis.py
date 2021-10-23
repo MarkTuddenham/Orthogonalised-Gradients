@@ -1,3 +1,6 @@
+from typing import Dict
+from typing import Tuple
+
 from copy import deepcopy
 from os import makedirs
 import os
@@ -21,6 +24,8 @@ from profiler import profile
 # from utils import get_device
 from utils import models
 # from utils import run_data
+from utils import get_args
+from utils import get_save_opts_from_args
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -45,6 +50,14 @@ rect_fig_size_thin = (fig_size * 1.618, fig_size / 1.618)
 pic_type = '.png'
 
 makedirs('./plots/', exist_ok=True)
+
+# (Orth, Norm) -> str
+optim_type_text: Dict[Tuple[bool, str], str] = {
+    (False, ''): '                   ',
+    (True, ''): ' w/ Orth           ',
+    (False, 'norm'): ' w/ Norm           ',
+    (False, 'comp_norm'): ' w/ Component Norm ',
+}
 
 
 def cosine_matrix(xs):
@@ -76,8 +89,8 @@ def calc_test_avg(opts, max_len=5):
     n = min(num_runs, max_len)
     test_stderr = test_std.div(np.sqrt(n))
 
-    orth_text = ' w/ Orth ' if opts['orth'] else '         '
-    logger.info((f'{opts["model"]}{orth_text}- {n}/{num_runs} runs - Test acc: '
+    text = optim_type_text[opts['orth'], opts['norm']]
+    logger.info((f'{opts["model"]}{text}- {n}/{num_runs} runs - Test acc: '
                  f'{test_mean[1]*100:.2f}+-{test_stderr[1]*100:.2f}, '
                  f'Loss: {test_mean[0]:.4f}+-{test_stderr[0]:.4f}'))
 
@@ -87,7 +100,8 @@ def setup_loss_acc_plot():
     losses_ax = losses_fig.add_subplot(111)
     acc_fig = plt.figure(figsize=rect_fig_size)
     acc_ax = acc_fig.add_subplot(111)
-    cmap = plt.get_cmap('jet_r')
+    sgd_cmap = plt.get_cmap('jet_r')
+    adam_cmap = plt.get_cmap('PiYG')
 
     losses_ax.spines['right'].set_color(None)
     losses_ax.spines['top'].set_color(None)
@@ -100,7 +114,7 @@ def setup_loss_acc_plot():
     acc_ax.set_xlabel('Epoch')
     acc_ax.set_ylabel('Validation Accuracy (%)')
 
-    return losses_fig, losses_ax, acc_fig, acc_ax, cmap
+    return losses_fig, losses_ax, acc_fig, acc_ax, sgd_cmap, adam_cmap
 
 
 def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
@@ -109,28 +123,37 @@ def plot_loss_acc_for_model(i, model_c, opts, plot_items, full):
         return
     valid_accuracies = load_last_tensor('results/valid_accuracies', opts)
 
-    _, losses_ax, _, acc_ax, cmap = plot_items
-
-    colour = cmap(float(i) / len(models.keys()))
+    _, losses_ax, _, acc_ax, sgd_cmap, adam_cmap = plot_items
 
     label_prefix = f'{opts["model"]} with '
+    line_type = '--'
+
     if opts['orth']:
         label_prefix += 'Orth '
+        line_type = '-'
+    elif opts['norm'] == 'norm':
+        label_prefix += 'Norm '
+        line_type = ':'
+    elif opts['norm'] == 'comp_norm':
+        label_prefix += 'Comp Norm '
+        line_type = ':'
+
     if opts['nest']:
         label_prefix += 'Nesterov '
-    label = label_prefix + 'SGD'
 
-    # TODO plot from 1 on the x axis
-    line_type = '.-' if opts['nest'] else '--'
-    if opts['orth']:
-        line_type = ':' if opts['nest'] else '-'
+    if opts['adam']:
+        label = label_prefix + 'Adam'
+        colour = adam_cmap(float(i) / len(models.keys()))
+    else:
+        label = label_prefix + 'SGDM'
+        colour = sgd_cmap(float(i) / len(models.keys()))
 
     losses_ax.plot(valid_losses, line_type, c=colour, label=label)
     acc_ax.plot(valid_accuracies, line_type, c=colour, label=label)
 
 
 def finalise_loss_acc_plot(plot_items):
-    losses_fig, losses_ax, acc_fig, acc_ax, _ = plot_items
+    losses_fig, losses_ax, acc_fig, acc_ax, _, _ = plot_items
     losses_ax.legend(loc='upper right', frameon=False, bbox_to_anchor=(1.26, 1))
     # losses_ax.legend(loc='lower right')
     losses_fig.savefig('plots/losses' + pic_type, bbox_inches='tight')
@@ -218,8 +241,8 @@ def dead_relus(opts):
             num_dead.append(s - zeroed_grad_path.count_nonzero())
         num_dead = th.tensor(num_dead).float()
 
-        orth_text = ' w/ Orth ' if opts['orth'] else '         '
-        logger.info((f'{opts["model"]} {layer} {orth_text}- '
+        text = optim_type_text[opts['orth'], opts['norm']]
+        logger.info((f'{opts["model"]} {layer} {text}- '
                      f'Dead Neurons: {num_dead.mean(): .3e} '
                      f'+-{num_dead.var(): .3e} out of {s: .3e}'))
 
@@ -304,8 +327,8 @@ def plot_filter_cosimilarity(opts):
             # running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
             # running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
 
-            orth_text = ' w/ Orth ' if orth else ''
-            ax.plot(range(x_size), mean_cosines, color=colours[orth], label='mean' + orth_text)
+            text = optim_type_text[opts['orth'], opts['norm']]
+            ax.plot(range(x_size), mean_cosines, color=colours[orth], label='mean' + text)
             # ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
             # ax.scatter(range(x_size), var_cosines, color='orange',
             #                    marker='+', alpha=0.5, label='variance')
@@ -330,7 +353,7 @@ def plot_filter_cosimilarity(opts):
             name = f'plots/cosines_{opts["model"]}_{layer}{pic_type}'
             logger.debug(f'Saved plot {name}')
             fig.savefig(name, bbox_inches='tight')
-            plt.close(fig)
+        plt.close(fig)
 
 
 def ir_cosimilarity(opts):
@@ -382,9 +405,9 @@ def ir_cosimilarity(opts):
         # running_range = range(N // 2, x_size - N // 2 + 1)
         # running_mean = np.convolve(mean_cosines, np.ones(N) / N, mode='valid')
         # running_var = np.convolve(var_cosines, np.ones(N) / N, mode='valid')
-        orth_text = ' w/ Orth ' if orth else ''
+        text = optim_type_text[opts['orth'], opts['norm']]
         ax.scatter(range(x_size), mean_cosines, color=colours[orth],
-                   marker='.', alpha=0.4, linewidths=0, label='mean' + orth_text)
+                   marker='.', alpha=0.4, linewidths=0, label='mean' + text)
         # cosines_ax.plot(running_range, running_mean, color='blue', ls='-', label='running mean')
         # ax.scatter(range(x_size), var_cosines, color='orange',
         #                    marker='+', alpha=0.25, label='variance')
@@ -404,7 +427,7 @@ def ir_cosimilarity(opts):
         name = f'plots/IR_cosines_{opts["model"]}' f'{pic_type}'
         logger.debug(f'Saved plot {name}')
         fig.savefig(name, bbox_inches='tight')
-        plt.close(fig)
+    plt.close(fig)
 
 
 @profile()
@@ -426,14 +449,21 @@ def do_analysis(opts, full=False):
     plot_items = setup_loss_acc_plot()
     for i, (model_name, model_c) in enumerate(models.items()):
         logger.info(f'Analysing results for {model_name}')
-        opts.update({'model': model_name, 'orth': False})
-        if full:
-            calc_test_avg(opts)
-        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
-        opts.update({'orth': True})
-        if full:
-            calc_test_avg(opts)
-        plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
+
+        opts.update({'model': model_name})
+
+        for adam in [0, 0.99]:
+            opts.update({'adam': adam})
+            for orth, norm in [
+                    (False, ''),
+                    (False, 'norm'),
+                    (False, 'comp_norm'),
+                    (True, '')]:
+                opts.update({'orth': orth, 'norm': norm})
+                if full:
+                    calc_test_avg(opts)
+                plot_loss_acc_for_model(i, model_c, opts, plot_items, full)
+
     finalise_loss_acc_plot(plot_items)
 
 
@@ -453,15 +483,5 @@ if __name__ == '__main__':
     logger.addHandler(log_stdout)
     logger.addHandler(log_f)
 
-    opts = {
-        'batch_size': 1024,
-        'epochs': 100,
-        'learning_rate': 1e-2,
-        'momentum': 0.9,
-        'weight_decay': 5e-4,
-        'model': 'resnet20',
-        'orth': False,
-        'nest': False,
-        'dataset': 'cifar10',
-    }
+    opts = get_save_opts_from_args(get_args())
     do_analysis(opts, True)
